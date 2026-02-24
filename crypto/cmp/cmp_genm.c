@@ -443,7 +443,7 @@ int OSSL_CMP_get1_certReqTemplate(OSSL_CMP_CTX *ctx,
 /*
  * Extract the nonce from the first NonceResponse in the genp ITAV and store
  * it in the CMP context for subsequent use in attestation evidence generation.
- * The ITAV infoType must be NID_id_smime_aa_evidenceStatement (placeholder for
+ * The ITAV infoType must be NID_id_smime_aa_nonceResponse (placeholder for
  * id-it-nonceResponse, TBD2).
  */
 static int set_remote_attestation_Nonce(OSSL_CMP_CTX *ctx,
@@ -456,7 +456,7 @@ static int set_remote_attestation_Nonce(OSSL_CMP_CTX *ctx,
     if (ctx == NULL || nonce_itav == NULL)
         goto err;
 
-    if (NID_id_smime_aa_evidenceStatement !=
+    if (NID_id_smime_aa_nonceResponse !=
         OBJ_obj2nid(OSSL_CMP_ITAV_get0_type(nonce_itav)))
         goto err;
 
@@ -502,7 +502,7 @@ int ossl_cmp_get_nonce(OSSL_CMP_CTX *ctx)
      * The genp carries the NonceResponseValue under the placeholder OID for
      * id-it-nonceResponse (TBD2).
      */
-    if ((itav = get_genm_itav(ctx, req, NID_id_smime_aa_evidenceStatement,
+    if ((itav = get_genm_itav(ctx, req, NID_id_smime_aa_nonceResponse,
                               "nonceResponse")) == NULL)
         return 0;
 

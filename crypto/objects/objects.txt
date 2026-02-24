@@ -323,6 +323,7 @@ id-smime-aa 45		: id-aa-ets-attrRevocationRefs
 id-smime-aa 47		: id-smime-aa-signingCertificateV2
 id-smime-aa 48		: id-aa-ets-archiveTimestampV2
 id-smime-aa 8888	: id-smime-aa-nonce
+id-smime-aa 8889	: id-smime-aa-nonceResponse
 id-smime-aa 999		: id-smime-aa-evidenceStatement
 
 # S/MIME Algorithm Identifiers

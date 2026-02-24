@@ -138,9 +138,9 @@ ASN1_ADB(OSSL_CMP_ITAV) = {
                                    OSSL_CMP_NONCEREQUEST)),
     /*
      * Placeholder for id-it-nonceResponse (TBD2) per draft-ietf-lamps-attestation-freshness.
-     * Replace NID_id_smime_aa_evidenceStatement with NID_id_it_nonceResponse once IANA assigns id-it TBD2.
+     * Replace NID_id_smime_aa_nonceResponse with NID_id_it_nonceResponse once IANA assigns id-it TBD2.
      */
-    ADB_ENTRY(NID_id_smime_aa_evidenceStatement,
+    ADB_ENTRY(NID_id_smime_aa_nonceResponse,
               ASN1_SEQUENCE_OF_OPT(OSSL_CMP_ITAV, infoValue.nonceResponseValue,
                                    OSSL_CMP_NONCERESPONSE))
 } ASN1_ADB_END(OSSL_CMP_ITAV, 0, infoType, 0,
@@ -554,7 +554,7 @@ OSSL_CMP_ITAV *OSSL_CMP_ITAV_new0_nonceRequest(int len,
 
 /*
  * Build a NonceResponse ITAV for use in genp.
- * Uses NID_id_smime_aa_evidenceStatement as placeholder for id-it-nonceResponse (TBD2).
+ * Uses NID_id_smime_aa_nonceResponse as placeholder for id-it-nonceResponse (TBD2).
  * Kept as OSSL_CMP_ITAV_new_ratsnonce() for backwards source compatibility;
  * the internal behaviour is updated to use the structured NonceResponse type.
  */
@@ -580,7 +580,7 @@ OSSL_CMP_ITAV *OSSL_CMP_ITAV_new_ratsnonce(const unsigned char *nonce, int len)
 
     if ((itav = OSSL_CMP_ITAV_new()) == NULL)
         goto err;
-    itav->infoType = OBJ_nid2obj(NID_id_smime_aa_evidenceStatement);
+    itav->infoType = OBJ_nid2obj(NID_id_smime_aa_nonceResponse);
     itav->infoValue.nonceResponseValue = sk;
     return itav;
 

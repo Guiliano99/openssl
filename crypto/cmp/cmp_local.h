@@ -270,7 +270,7 @@ DECLARE_ASN1_FUNCTIONS(OSSL_CMP_NONCEREQUEST)
  *     hint   UTF8String OPTIONAL  -- echoes request hint if present
  * }
  * Used as value of id-it-nonceResponse (genp direction).
- * Placeholder OID: NID_id_smime_aa_evidenceStatement until IANA assigns id-it TBD2.
+ * Placeholder OID: NID_id_smime_aa_nonceResponse until IANA assigns id-it TBD2.
  */
 struct ossl_cmp_nonceresponse_st {
     ASN1_OCTET_STRING *nonce;
@@ -346,7 +346,7 @@ struct ossl_cmp_itav_st {
         STACK_OF(OSSL_CMP_NONCEREQUEST) *nonceRequestValue;
         /*
          * Placeholder for id-it-nonceResponse (TBD2): one entry per evidence type.
-         * Uses NID_id_smime_aa_evidenceStatement until IANA assigns the final id-it arc number.
+         * Uses NID_id_smime_aa_nonceResponse until IANA assigns the final id-it arc number.
          */
         STACK_OF(OSSL_CMP_NONCERESPONSE) *nonceResponseValue;
 

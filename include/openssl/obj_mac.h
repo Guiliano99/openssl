@@ -1034,6 +1034,10 @@
 #define NID_id_smime_aa_nonce           1600
 #define OBJ_id_smime_aa_nonce           OBJ_id_smime_aa,8888L
 
+#define SN_id_smime_aa_nonceResponse            "id-smime-aa-nonceResponse"
+#define NID_id_smime_aa_nonceResponse           1602
+#define OBJ_id_smime_aa_nonceResponse           OBJ_id_smime_aa,8889L
+
 #define SN_id_smime_aa_evidenceStatement                "id-smime-aa-evidenceStatement"
 #define NID_id_smime_aa_evidenceStatement               1601
 #define OBJ_id_smime_aa_evidenceStatement               OBJ_id_smime_aa,999L
