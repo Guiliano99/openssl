@@ -440,21 +440,41 @@ int OSSL_CMP_get1_certReqTemplate(OSSL_CMP_CTX *ctx,
     return res;
 }
 
+/*
+ * Extract the nonce from the first NonceResponse in the genp ITAV and store
+ * it in the CMP context for subsequent use in attestation evidence generation.
+ * The ITAV infoType must be NID_id_smime_aa_evidenceStatement (placeholder for
+ * id-it-nonceResponse, TBD2).
+ */
 static int set_remote_attestation_Nonce(OSSL_CMP_CTX *ctx,
                                         OSSL_CMP_ITAV *nonce_itav)
 {
-    ASN1_OCTET_STRING *nonce;
+    STACK_OF(OSSL_CMP_NONCERESPONSE) *resps;
+    OSSL_CMP_NONCERESPONSE *resp;
     int ret = 0;
 
     if (ctx == NULL || nonce_itav == NULL)
         goto err;
 
-    if (NID_id_smime_aa_nonce !=
+    if (NID_id_smime_aa_evidenceStatement !=
         OBJ_obj2nid(OSSL_CMP_ITAV_get0_type(nonce_itav)))
         goto err;
 
-    nonce = nonce_itav->infoValue.RemoteAttestationNonce;
-    if (!ossl_cmp_ctx_set1_rats_nonce(ctx, nonce))
+    resps = nonce_itav->infoValue.nonceResponseValue;
+    if (resps == NULL || sk_OSSL_CMP_NONCERESPONSE_num(resps) < 1)
+        goto err;
+
+    resp = sk_OSSL_CMP_NONCERESPONSE_value(resps, 0);
+    if (resp == NULL || resp->nonce == NULL)
+        goto err;
+
+    /* An empty nonce signals the RA/CA could not provide one (not an error). */
+    if (ASN1_STRING_length(resp->nonce) == 0) {
+        ret = 1;
+        goto err;
+    }
+
+    if (!ossl_cmp_ctx_set1_rats_nonce(ctx, resp->nonce))
         goto err;
 
     ret = 1;
@@ -471,11 +491,19 @@ int ossl_cmp_get_nonce(OSSL_CMP_CTX *ctx)
         ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
         return 0;
     }
-    if ((req = OSSL_CMP_ITAV_create(OBJ_nid2obj(NID_id_smime_aa_nonce),
-                                    NULL)) == NULL)
+    /*
+     * Build a NonceRequestValue ITAV under the placeholder OID for
+     * id-it-nonceRequest (TBD1).  All NonceRequest fields are optional;
+     * pass 0/NULL to let the RA/CA choose length, evidence type and verifier.
+     */
+    if ((req = OSSL_CMP_ITAV_new0_nonceRequest(0, NULL, NULL)) == NULL)
         return 0;
-    if ((itav = get_genm_itav(ctx, req, NID_id_smime_aa_nonce,
-                              "aa-nonce")) == NULL)
+    /*
+     * The genp carries the NonceResponseValue under the placeholder OID for
+     * id-it-nonceResponse (TBD2).
+     */
+    if ((itav = get_genm_itav(ctx, req, NID_id_smime_aa_evidenceStatement,
+                              "nonceResponse")) == NULL)
         return 0;
 
     if (!set_remote_attestation_Nonce(ctx, itav))
