@@ -10,7 +10,7 @@
  */
 
 /* Serialized OID's */
-static const unsigned char so[9541] = {
+static const unsigned char so[9553] = {
     0x2A,0x86,0x48,0x86,0xF7,0x0D,                 /* [    0] OBJ_rsadsi */
     0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,            /* [    6] OBJ_pkcs */
     0x2A,0x86,0x48,0x86,0xF7,0x0D,0x02,0x02,       /* [   13] OBJ_md2 */
@@ -1350,9 +1350,10 @@ static const unsigned char so[9541] = {
     0x60,0x86,0x48,0x01,0x65,0x03,0x04,0x03,0x2E,  /* [ 9507] OBJ_SLH_DSA_SHAKE_256f_WITH_SHAKE256 */
     0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,0x09,0x10,0x02,0xC5,0x38,  /* [ 9516] OBJ_id_smime_aa_nonce */
     0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,0x09,0x10,0x02,0x87,0x67,  /* [ 9528] OBJ_id_smime_aa_evidenceStatement */
+    0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,0x09,0x10,0x02,0xC5,0x39,  /* [ 9540] OBJ_id_smime_aa_nonceResponse */
 };
 
-#define NUM_NID 1602
+#define NUM_NID 1603
 static const ASN1_OBJECT nid_objs[NUM_NID] = {
     {"UNDEF", "undefined", NID_undef},
     {"rsadsi", "RSA Data Security, Inc.", NID_rsadsi, 6, &so[0]},
@@ -2956,9 +2957,10 @@ static const ASN1_OBJECT nid_objs[NUM_NID] = {
     { NULL, NULL, NID_undef },
     {"id-smime-aa-nonce", "id-smime-aa-nonce", NID_id_smime_aa_nonce, 12, &so[9516]},
     {"id-smime-aa-evidenceStatement", "id-smime-aa-evidenceStatement", NID_id_smime_aa_evidenceStatement, 12, &so[9528]},
+    {"id-smime-aa-nonceResponse", "id-smime-aa-nonceResponse", NID_id_smime_aa_nonceResponse, 12, &so[9540]},
 };
 
-#define NUM_SN 1489
+#define NUM_SN 1490
 static const unsigned int sn_objs[NUM_SN] = {
      364,    /* "AD_DVCS" */
      419,    /* "AES-128-CBC" */
@@ -3800,6 +3802,7 @@ static const unsigned int sn_objs[NUM_SN] = {
      214,    /* "id-smime-aa-mlExpandHistory" */
      216,    /* "id-smime-aa-msgSigDigest" */
     1600,    /* "id-smime-aa-nonce" */
+    1602,    /* "id-smime-aa-nonceResponse" */
      212,    /* "id-smime-aa-receiptRequest" */
      213,    /* "id-smime-aa-securityLabel" */
      239,    /* "id-smime-aa-signatureType" */
@@ -4451,7 +4454,7 @@ static const unsigned int sn_objs[NUM_SN] = {
     1289,    /* "zstd" */
 };
 
-#define NUM_LN 1489
+#define NUM_LN 1490
 static const unsigned int ln_objs[NUM_LN] = {
      363,    /* "AD Time Stamping" */
      405,    /* "ANSI X9.62" */
@@ -5422,6 +5425,7 @@ static const unsigned int ln_objs[NUM_LN] = {
      214,    /* "id-smime-aa-mlExpandHistory" */
      216,    /* "id-smime-aa-msgSigDigest" */
     1600,    /* "id-smime-aa-nonce" */
+    1602,    /* "id-smime-aa-nonceResponse" */
      212,    /* "id-smime-aa-receiptRequest" */
      213,    /* "id-smime-aa-securityLabel" */
      239,    /* "id-smime-aa-signatureType" */
@@ -5944,7 +5948,7 @@ static const unsigned int ln_objs[NUM_LN] = {
      125,    /* "zlib compression" */
 };
 
-#define NUM_OBJ 1346
+#define NUM_OBJ 1347
 static const unsigned int obj_objs[NUM_OBJ] = {
        0,    /* OBJ_undef                        0 */
      181,    /* OBJ_iso                          1 */
@@ -7280,6 +7284,7 @@ static const unsigned int obj_objs[NUM_OBJ] = {
     1057,    /* OBJ_blake2s256                   1 3 6 1 4 1 1722 12 2 2 8 */
     1601,    /* OBJ_id_smime_aa_evidenceStatement 1 2 840 113549 1 9 16 2 999 */
     1600,    /* OBJ_id_smime_aa_nonce            1 2 840 113549 1 9 16 2 8888 */
+    1602,    /* OBJ_id_smime_aa_nonceResponse    1 2 840 113549 1 9 16 2 8889 */
     1283,    /* OBJ_oracle_jdk_trustedkeyusage   2 16 840 1 113894 746875 1 1 */
     1159,    /* OBJ_dstu4145be                   1 2 804 2 1 1 1 1 3 1 1 1 1 */
     1160,    /* OBJ_uacurve0                     1 2 804 2 1 1 1 1 3 1 1 2 0 */
