@@ -129,9 +129,20 @@ ASN1_ADB(OSSL_CMP_ITAV) = {
                                    OSSL_CMP_CRLSTATUS)),
     ADB_ENTRY(NID_id_it_crls,
               ASN1_SEQUENCE_OF_OPT(OSSL_CMP_ITAV, infoValue.crls, X509_CRL)),
+    /*
+     * Placeholder for id-it-nonceRequest (TBD1) per draft-ietf-lamps-attestation-freshness.
+     * Replace NID_id_smime_aa_nonce with NID_id_it_nonceRequest once IANA assigns id-it TBD1.
+     */
     ADB_ENTRY(NID_id_smime_aa_nonce,
-              ASN1_OPT(OSSL_CMP_ITAV, infoValue.RemoteAttestationNonce,
-                       ASN1_OCTET_STRING))
+              ASN1_SEQUENCE_OF_OPT(OSSL_CMP_ITAV, infoValue.nonceRequestValue,
+                                   OSSL_CMP_NONCEREQUEST)),
+    /*
+     * Placeholder for id-it-nonceResponse (TBD2) per draft-ietf-lamps-attestation-freshness.
+     * Replace NID_id_smime_aa_evidenceStatement with NID_id_it_nonceResponse once IANA assigns id-it TBD2.
+     */
+    ADB_ENTRY(NID_id_smime_aa_evidenceStatement,
+              ASN1_SEQUENCE_OF_OPT(OSSL_CMP_ITAV, infoValue.nonceResponseValue,
+                                   OSSL_CMP_NONCERESPONSE))
 } ASN1_ADB_END(OSSL_CMP_ITAV, 0, infoType, 0,
                &infotypeandvalue_default_tt, NULL);
 
@@ -141,6 +152,21 @@ ASN1_SEQUENCE(OSSL_CMP_ITAV) = {
 } ASN1_SEQUENCE_END(OSSL_CMP_ITAV)
 IMPLEMENT_ASN1_FUNCTIONS(OSSL_CMP_ITAV)
 IMPLEMENT_ASN1_DUP_FUNCTION(OSSL_CMP_ITAV)
+
+ASN1_SEQUENCE(OSSL_CMP_NONCEREQUEST) = {
+    ASN1_OPT(OSSL_CMP_NONCEREQUEST, len,  ASN1_INTEGER),
+    ASN1_OPT(OSSL_CMP_NONCEREQUEST, type, ASN1_OBJECT),
+    ASN1_OPT(OSSL_CMP_NONCEREQUEST, hint, ASN1_UTF8STRING)
+} ASN1_SEQUENCE_END(OSSL_CMP_NONCEREQUEST)
+IMPLEMENT_ASN1_FUNCTIONS(OSSL_CMP_NONCEREQUEST)
+
+ASN1_SEQUENCE(OSSL_CMP_NONCERESPONSE) = {
+    ASN1_SIMPLE(OSSL_CMP_NONCERESPONSE, nonce,  ASN1_OCTET_STRING),
+    ASN1_OPT(OSSL_CMP_NONCERESPONSE,   expiry, ASN1_INTEGER),
+    ASN1_OPT(OSSL_CMP_NONCERESPONSE,   type,   ASN1_OBJECT),
+    ASN1_OPT(OSSL_CMP_NONCERESPONSE,   hint,   ASN1_UTF8STRING)
+} ASN1_SEQUENCE_END(OSSL_CMP_NONCERESPONSE)
+IMPLEMENT_ASN1_FUNCTIONS(OSSL_CMP_NONCERESPONSE)
 
 ASN1_SEQUENCE(OSSL_CMP_ROOTCAKEYUPDATE) = {
     /* OSSL_CMP_CMPCERTIFICATE is effectively X509 so it is used directly */
@@ -476,25 +502,91 @@ int OSSL_CMP_ITAV_get1_certReqTemplate(const OSSL_CMP_ITAV *itav,
     return 0;
 }
 
+/*
+ * Build a NonceRequest ITAV for use in genm.
+ * All parameters are optional per the draft; pass NULL/0 to omit a field.
+ * Uses NID_id_smime_aa_nonce as placeholder for id-it-nonceRequest (TBD1).
+ */
+OSSL_CMP_ITAV *OSSL_CMP_ITAV_new0_nonceRequest(int len,
+                                                ASN1_OBJECT *type,
+                                                const char *hint)
+{
+    OSSL_CMP_ITAV *itav = NULL;
+    OSSL_CMP_NONCEREQUEST *req = NULL;
+    STACK_OF(OSSL_CMP_NONCEREQUEST) *sk = NULL;
+
+    if ((req = OSSL_CMP_NONCEREQUEST_new()) == NULL)
+        goto err;
+    if (len > 0) {
+        if ((req->len = ASN1_INTEGER_new()) == NULL)
+            goto err;
+        if (!ASN1_INTEGER_set(req->len, len))
+            goto err;
+    }
+    if (type != NULL) {
+        ASN1_OBJECT_free(req->type);
+        req->type = type;
+    }
+    if (hint != NULL) {
+        if ((req->hint = ASN1_UTF8STRING_new()) == NULL)
+            goto err;
+        if (!ASN1_STRING_set(req->hint, hint, -1))
+            goto err;
+    }
+    if ((sk = sk_OSSL_CMP_NONCEREQUEST_new_null()) == NULL)
+        goto err;
+    if (!sk_OSSL_CMP_NONCEREQUEST_push(sk, req))
+        goto err;
+    req = NULL;
+
+    if ((itav = OSSL_CMP_ITAV_new()) == NULL)
+        goto err;
+    itav->infoType = OBJ_nid2obj(NID_id_smime_aa_nonce);
+    itav->infoValue.nonceRequestValue = sk;
+    return itav;
+
+ err:
+    OSSL_CMP_NONCEREQUEST_free(req);
+    sk_OSSL_CMP_NONCEREQUEST_pop_free(sk, OSSL_CMP_NONCEREQUEST_free);
+    OSSL_CMP_ITAV_free(itav);
+    return NULL;
+}
+
+/*
+ * Build a NonceResponse ITAV for use in genp.
+ * Uses NID_id_smime_aa_evidenceStatement as placeholder for id-it-nonceResponse (TBD2).
+ * Kept as OSSL_CMP_ITAV_new_ratsnonce() for backwards source compatibility;
+ * the internal behaviour is updated to use the structured NonceResponse type.
+ */
 OSSL_CMP_ITAV *OSSL_CMP_ITAV_new_ratsnonce(const unsigned char *nonce, int len)
 {
-    OSSL_CMP_ITAV *itav;
+    OSSL_CMP_ITAV *itav = NULL;
+    OSSL_CMP_NONCERESPONSE *resp = NULL;
+    STACK_OF(OSSL_CMP_NONCERESPONSE) *sk = NULL;
 
     if (nonce == NULL || len <= 0)
         return NULL;
 
-    itav = OSSL_CMP_ITAV_new();
-    if (itav == NULL)
-        return NULL;
-
-    if (!ossl_cmp_asn1_octet_string_set1_bytes(&(itav->infoValue.
-                                                 RemoteAttestationNonce),
-                                               nonce, len))
+    if ((resp = OSSL_CMP_NONCERESPONSE_new()) == NULL)
         goto err;
-    itav->infoType = OBJ_nid2obj(NID_id_smime_aa_nonce);
+    if (!ASN1_OCTET_STRING_set(resp->nonce, nonce, len))
+        goto err;
+
+    if ((sk = sk_OSSL_CMP_NONCERESPONSE_new_null()) == NULL)
+        goto err;
+    if (!sk_OSSL_CMP_NONCERESPONSE_push(sk, resp))
+        goto err;
+    resp = NULL;
+
+    if ((itav = OSSL_CMP_ITAV_new()) == NULL)
+        goto err;
+    itav->infoType = OBJ_nid2obj(NID_id_smime_aa_evidenceStatement);
+    itav->infoValue.nonceResponseValue = sk;
     return itav;
 
  err:
+    OSSL_CMP_NONCERESPONSE_free(resp);
+    sk_OSSL_CMP_NONCERESPONSE_pop_free(sk, OSSL_CMP_NONCERESPONSE_free);
     OSSL_CMP_ITAV_free(itav);
     return NULL;
 }
