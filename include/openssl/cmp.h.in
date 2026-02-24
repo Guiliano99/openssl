@@ -234,6 +234,16 @@ typedef struct ossl_cmp_crlstatus_st OSSL_CMP_CRLSTATUS;
     generate_stack_macros("OSSL_CMP_CRLSTATUS");
 -}
 
+typedef struct ossl_cmp_noncerequest_st OSSL_CMP_NONCEREQUEST;
+{-
+    generate_stack_macros("OSSL_CMP_NONCEREQUEST");
+-}
+
+typedef struct ossl_cmp_nonceresponse_st OSSL_CMP_NONCERESPONSE;
+{-
+    generate_stack_macros("OSSL_CMP_NONCERESPONSE");
+-}
+
 typedef OSSL_CRMF_ATTRIBUTETYPEANDVALUE OSSL_CMP_ATAV;
 #  define OSSL_CMP_ATAV_free OSSL_CRMF_ATTRIBUTETYPEANDVALUE_free
 typedef STACK_OF(OSSL_CRMF_ATTRIBUTETYPEANDVALUE) OSSL_CMP_ATAVS;
@@ -327,6 +337,9 @@ OSSL_CMP_ATAV *OSSL_CMP_ATAV_new_rsaKeyLen(int len);
 int OSSL_CMP_ATAV_get_rsaKeyLen(const OSSL_CMP_ATAV *atav);
 int OSSL_CMP_ATAV_push1(OSSL_CMP_ATAVS **sk_p, const OSSL_CMP_ATAV *atav);
 OSSL_CMP_ITAV *OSSL_CMP_ITAV_new_ratsnonce(const unsigned char *nonce, int len);
+/* Build id-it-nonceRequest ITAV (placeholder OID: NID_id_smime_aa_nonce). */
+OSSL_CMP_ITAV *OSSL_CMP_ITAV_new0_nonceRequest(int len, ASN1_OBJECT *type,
+                                                const char *hint);
 
 void OSSL_CMP_MSG_free(OSSL_CMP_MSG *msg);
 
