@@ -247,6 +247,40 @@ struct ossl_cmp_crlstatus_st {
 DECLARE_ASN1_FUNCTIONS(OSSL_CMP_CRLSTATUS)
 
 /*-
+ * NonceRequest ::= SEQUENCE {
+ *     len   INTEGER    OPTIONAL,  -- required nonce length in bytes
+ *     type  OID        OPTIONAL,  -- evidence statement type OID
+ *     hint  UTF8String OPTIONAL   -- FQDN/URI identifying the Verifier
+ * }
+ * Used as value of id-it-nonceRequest (genm direction).
+ * Placeholder OID: NID_id_smime_aa_nonce until IANA assigns id-it TBD1.
+ */
+struct ossl_cmp_noncerequest_st {
+    ASN1_INTEGER    *len;
+    ASN1_OBJECT     *type;
+    ASN1_UTF8STRING *hint;
+}; /* OSSL_CMP_NONCEREQUEST */
+DECLARE_ASN1_FUNCTIONS(OSSL_CMP_NONCEREQUEST)
+
+/*-
+ * NonceResponse ::= SEQUENCE {
+ *     nonce  OCTET STRING,        -- the nonce value (min. 64-bit entropy)
+ *     expiry INTEGER    OPTIONAL, -- validity in seconds
+ *     type   OID        OPTIONAL, -- echoes request type if present
+ *     hint   UTF8String OPTIONAL  -- echoes request hint if present
+ * }
+ * Used as value of id-it-nonceResponse (genp direction).
+ * Placeholder OID: NID_id_smime_aa_evidenceStatement until IANA assigns id-it TBD2.
+ */
+struct ossl_cmp_nonceresponse_st {
+    ASN1_OCTET_STRING *nonce;
+    ASN1_INTEGER      *expiry;
+    ASN1_OBJECT       *type;
+    ASN1_UTF8STRING   *hint;
+}; /* OSSL_CMP_NONCERESPONSE */
+DECLARE_ASN1_FUNCTIONS(OSSL_CMP_NONCERESPONSE)
+
+/*-
  * declared already here as it will be used in OSSL_CMP_MSG (nested) and
  * infoType and infoValue
  */
@@ -305,7 +339,16 @@ struct ossl_cmp_itav_st {
         STACK_OF(OSSL_CMP_CRLSTATUS) *crlStatusList;
         /* NID_id_it_crls - Certificate Status Lists */
         STACK_OF(X509_CRL) *crls;
-        ASN1_OCTET_STRING *RemoteAttestationNonce;
+        /*
+         * Placeholder for id-it-nonceRequest (TBD1): one entry per evidence type.
+         * Uses NID_id_smime_aa_nonce until IANA assigns the final id-it arc number.
+         */
+        STACK_OF(OSSL_CMP_NONCEREQUEST) *nonceRequestValue;
+        /*
+         * Placeholder for id-it-nonceResponse (TBD2): one entry per evidence type.
+         * Uses NID_id_smime_aa_evidenceStatement until IANA assigns the final id-it arc number.
+         */
+        STACK_OF(OSSL_CMP_NONCERESPONSE) *nonceResponseValue;
 
         /* this is to be used for so far undeclared objects */
         ASN1_TYPE *other;
