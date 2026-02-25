@@ -27,6 +27,9 @@
 
 # define IS_NULL_DN(name) (X509_NAME_get_entry(name, 0) == NULL)
 
+/* Stack of ASN1_OCTET_STRING used to store multiple RATS nonces */
+DEFINE_STACK_OF(ASN1_OCTET_STRING)
+
 /*
  * this structure is used to store the context for CMP sessions
  */
@@ -120,7 +123,9 @@ struct ossl_cmp_ctx_st {
     X509 *oldCert; /* cert to be updated (via KUR) or to be revoked (via RR) */
     X509_REQ *p10CSR; /* for P10CR: PKCS#10 CSR to be sent */
     int rats_status; /* Remote attestation procedures (RATS) status */
-    ASN1_OCTET_STRING *rats_nonce; /* RATS nonce for generating evidence */
+    int nonce_req_length; /* requested nonce length in bytes (0 = server chooses) */
+    int nonce_seq_size;   /* number of NonceRequest entries in genm sequence (0 = default 1) */
+    STACK_OF(ASN1_OCTET_STRING) *rats_nonces; /* all RATS nonces received from RA/CA */
 
     /* misc body contents */
     int revocationReason; /* revocation reason code to be included in RR */
@@ -924,7 +929,7 @@ int ossl_cmp_ctx_set1_recipNonce(OSSL_CMP_CTX *ctx,
 EVP_PKEY *ossl_cmp_ctx_get0_newPubkey(const OSSL_CMP_CTX *ctx);
 int ossl_cmp_ctx_set1_first_senderNonce(OSSL_CMP_CTX *ctx,
                                         const ASN1_OCTET_STRING *nonce);
-int ossl_cmp_ctx_set1_rats_nonce(OSSL_CMP_CTX *ctx, const ASN1_OCTET_STRING *ct);
+int ossl_cmp_ctx_push1_rats_nonce(OSSL_CMP_CTX *ctx, const ASN1_OCTET_STRING *nonce);
 int ossl_cmp_get_nonce(OSSL_CMP_CTX *ctx);
 
 /* from cmp_status.c */

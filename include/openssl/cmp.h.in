@@ -366,6 +366,7 @@ const char *OSSL_CMP_CTX_get0_propq(const OSSL_CMP_CTX *ctx);
 #  define OSSL_CMP_OPT_DISABLE_CONFIRM 26
 #  define OSSL_CMP_OPT_REVOCATION_REASON 27
 #  define OSSL_CMP_OPT_INIT_RATS 28
+#  define OSSL_CMP_OPT_NONCE_REQ_LENGTH 29 /* RATS: requested nonce byte length (0 = server chooses) */
 /* CMP protection options: */
 #  define OSSL_CMP_OPT_UNPROTECTED_SEND 30
 #  define OSSL_CMP_OPT_UNPROTECTED_ERRORS 31
@@ -375,6 +376,7 @@ const char *OSSL_CMP_CTX_get0_propq(const OSSL_CMP_CTX *ctx);
 #  define OSSL_CMP_OPT_IGNORE_KEYUSAGE 35
 #  define OSSL_CMP_OPT_PERMIT_TA_IN_EXTRACERTS_FOR_IR 36
 #  define OSSL_CMP_OPT_NO_CACHE_EXTRACERTS 37
+#  define OSSL_CMP_OPT_NONCE_SEQ_SIZE 38 /* RATS: number of NonceRequest entries in genm sequence (0 = default 1) */
 int OSSL_CMP_CTX_set_option(OSSL_CMP_CTX *ctx, int opt, int val);
 int OSSL_CMP_CTX_get_option(const OSSL_CMP_CTX *ctx, int opt);
 /* CMP-specific callback for logging and outputting the error queue: */
@@ -383,6 +385,7 @@ int OSSL_CMP_CTX_set_log_cb(OSSL_CMP_CTX *ctx, OSSL_CMP_log_cb_t cb);
     OSSL_CMP_CTX_set_option(ctx, OSSL_CMP_OPT_LOG_VERBOSITY, level)
 void OSSL_CMP_CTX_print_errors(const OSSL_CMP_CTX *ctx);
 ASN1_OCTET_STRING *OSSL_CMP_CTX_get0_rats_nonce(const OSSL_CMP_CTX *ctx);
+STACK_OF(ASN1_OCTET_STRING) *OSSL_CMP_CTX_get0_rats_nonces(const OSSL_CMP_CTX *ctx);
 /* message transfer: */
 int OSSL_CMP_CTX_set1_serverPath(OSSL_CMP_CTX *ctx, const char *path);
 int OSSL_CMP_CTX_set1_server(OSSL_CMP_CTX *ctx, const char *address);
