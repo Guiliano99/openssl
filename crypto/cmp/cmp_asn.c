@@ -553,6 +553,49 @@ OSSL_CMP_ITAV *OSSL_CMP_ITAV_new0_nonceRequest(int len,
 }
 
 /*
+ * Build a NonceRequest ITAV whose NonceRequestValue contains 'count' entries,
+ * each requesting a nonce of 'len' bytes (0 = let RA/CA choose length).
+ * type and hint are omitted from every entry; pass count <= 1 for a single
+ * entry (equivalent to OSSL_CMP_ITAV_new0_nonceRequest(len, NULL, NULL)).
+ * Uses NID_id_smime_aa_nonce as placeholder for id-it-nonceRequest (TBD1).
+ */
+OSSL_CMP_ITAV *OSSL_CMP_ITAV_new0_nonceRequestSeq(int len, int count)
+{
+    OSSL_CMP_ITAV *itav;
+    int i;
+
+    if (count <= 0)
+        count = 1;
+
+    if ((itav = OSSL_CMP_ITAV_new0_nonceRequest(len, NULL, NULL)) == NULL)
+        return NULL;
+
+    for (i = 1; i < count; i++) {
+        OSSL_CMP_NONCEREQUEST *entry = OSSL_CMP_NONCEREQUEST_new();
+
+        if (entry == NULL) {
+            OSSL_CMP_ITAV_free(itav);
+            return NULL;
+        }
+        if (len > 0) {
+            if ((entry->len = ASN1_INTEGER_new()) == NULL
+                    || !ASN1_INTEGER_set(entry->len, len)) {
+                OSSL_CMP_NONCEREQUEST_free(entry);
+                OSSL_CMP_ITAV_free(itav);
+                return NULL;
+            }
+        }
+        if (!sk_OSSL_CMP_NONCEREQUEST_push(itav->infoValue.nonceRequestValue,
+                                           entry)) {
+            OSSL_CMP_NONCEREQUEST_free(entry);
+            OSSL_CMP_ITAV_free(itav);
+            return NULL;
+        }
+    }
+    return itav;
+}
+
+/*
  * Build a NonceResponse ITAV for use in genp.
  * Uses NID_id_smime_aa_nonceResponse as placeholder for id-it-nonceResponse (TBD2).
  * Kept as OSSL_CMP_ITAV_new_ratsnonce() for backwards source compatibility;
