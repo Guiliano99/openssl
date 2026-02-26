@@ -1496,3 +1496,4 @@ aes_256_cbc_hmac_sha512_etm		1495
 id_smime_aa_nonce		1600
 id_smime_aa_evidenceStatement		1601
 id_smime_aa_nonceResponse		1602
+id_smime_aa_attestation		1603
