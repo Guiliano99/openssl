@@ -861,10 +861,20 @@ X509 *OSSL_CMP_exec_certreq(OSSL_CMP_CTX *ctx, int req_type,
     int rid = is_p10 ? OSSL_CMP_CERTREQID_NONE : OSSL_CMP_CERTREQID;
     int rep_type = is_p10 ? OSSL_CMP_PKIBODY_CP : req_type + 1;
     X509 *result = NULL;
+    OSSL_CMP_certreq_cb_t certreq_cb = ctx->certreq_cb;
 
     if (ctx == NULL) {
         ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
         return NULL;
+    }
+
+    if (ctx->rats_status) {
+        if (!ossl_cmp_get_nonce(ctx))
+            goto err;
+    }
+    if (certreq_cb != NULL && !certreq_cb(ctx, ctx->certreq_cb_arg)) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_CERTREQ_CALLBACK_FAILED);
+        goto err;
     }
 
     if (!initial_certreq(ctx, req_type, crm, &rep, rep_type))

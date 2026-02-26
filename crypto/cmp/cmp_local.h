@@ -18,6 +18,9 @@
 
 #define IS_NULL_DN(name) (X509_NAME_get_entry(name, 0) == NULL)
 
+/* Stack of ASN1_OCTET_STRING used to store multiple RATS nonces */
+DEFINE_STACK_OF(ASN1_OCTET_STRING)
+
 /*
  * this structure is used to store the context for CMP sessions
  */
@@ -110,6 +113,10 @@ struct ossl_cmp_ctx_st {
     int popoMethod; /* Proof-of-possession mechanism; default: signature */
     X509 *oldCert; /* cert to be updated (via KUR) or to be revoked (via RR) */
     X509_REQ *p10CSR; /* for P10CR: PKCS#10 CSR to be sent */
+    int rats_status; /* Remote attestation procedures (RATS) status */
+    int nonce_req_length; /* requested nonce length in bytes (0 = server chooses) */
+    int nonce_seq_size;   /* number of NonceRequest entries in genm sequence (0 = default 1) */
+    STACK_OF(ASN1_OCTET_STRING) *rats_nonces; /* all RATS nonces received from RA/CA */
 
     /* misc body contents */
     int revocationReason; /* revocation reason code to be included in RR */
@@ -127,6 +134,9 @@ struct ossl_cmp_ctx_st {
     /* certificate confirmation */
     OSSL_CMP_certConf_cb_t certConf_cb; /* callback for app checking new cert */
     void *certConf_cb_arg; /* allows to store an argument individual to cb */
+    /* certificate request callback */
+    OSSL_CMP_certreq_cb_t certreq_cb; /* callback for app before certificate request */
+    void *certreq_cb_arg; /* allows to store an argument individual to cb */
 } /* OSSL_CMP_CTX */;
 
 /*
@@ -233,6 +243,40 @@ struct ossl_cmp_crlstatus_st {
 DECLARE_ASN1_FUNCTIONS(OSSL_CMP_CRLSTATUS)
 
 /*-
+ * NonceRequest ::= SEQUENCE {
+ *     len   INTEGER    OPTIONAL,  -- required nonce length in bytes
+ *     type  OID        OPTIONAL,  -- evidence statement type OID
+ *     hint  UTF8String OPTIONAL   -- FQDN/URI identifying the Verifier
+ * }
+ * Used as value of id-it-nonceRequest (genm direction).
+ * Placeholder OID: NID_id_smime_aa_nonce until IANA assigns id-it TBD1.
+ */
+struct ossl_cmp_noncerequest_st {
+    ASN1_INTEGER    *len;
+    ASN1_OBJECT     *type;
+    ASN1_UTF8STRING *hint;
+}; /* OSSL_CMP_NONCEREQUEST */
+DECLARE_ASN1_FUNCTIONS(OSSL_CMP_NONCEREQUEST)
+
+/*-
+ * NonceResponse ::= SEQUENCE {
+ *     nonce  OCTET STRING,        -- the nonce value (min. 64-bit entropy)
+ *     expiry INTEGER    OPTIONAL, -- validity in seconds
+ *     type   OID        OPTIONAL, -- echoes request type if present
+ *     hint   UTF8String OPTIONAL  -- echoes request hint if present
+ * }
+ * Used as value of id-it-nonceResponse (genp direction).
+ * Placeholder OID: NID_id_smime_aa_nonceResponse until IANA assigns id-it TBD2.
+ */
+struct ossl_cmp_nonceresponse_st {
+    ASN1_OCTET_STRING *nonce;
+    ASN1_INTEGER      *expiry;
+    ASN1_OBJECT       *type;
+    ASN1_UTF8STRING   *hint;
+}; /* OSSL_CMP_NONCERESPONSE */
+DECLARE_ASN1_FUNCTIONS(OSSL_CMP_NONCERESPONSE)
+
+/*-
  * declared already here as it will be used in OSSL_CMP_MSG (nested) and
  * infoType and infoValue
  */
@@ -291,6 +335,16 @@ struct ossl_cmp_itav_st {
         STACK_OF(OSSL_CMP_CRLSTATUS) *crlStatusList;
         /* NID_id_it_crls - Certificate Status Lists */
         STACK_OF(X509_CRL) *crls;
+        /*
+         * Placeholder for id-it-nonceRequest (TBD1): one entry per evidence type.
+         * Uses NID_id_smime_aa_nonce until IANA assigns the final id-it arc number.
+         */
+        STACK_OF(OSSL_CMP_NONCEREQUEST) *nonceRequestValue;
+        /*
+         * Placeholder for id-it-nonceResponse (TBD2): one entry per evidence type.
+         * Uses NID_id_smime_aa_nonceResponse until IANA assigns the final id-it arc number.
+         */
+        STACK_OF(OSSL_CMP_NONCERESPONSE) *nonceResponseValue;
 
         /* this is to be used for so far undeclared objects */
         ASN1_TYPE *other;
@@ -866,6 +920,8 @@ int ossl_cmp_ctx_set1_recipNonce(OSSL_CMP_CTX *ctx,
 EVP_PKEY *ossl_cmp_ctx_get0_newPubkey(const OSSL_CMP_CTX *ctx);
 int ossl_cmp_ctx_set1_first_senderNonce(OSSL_CMP_CTX *ctx,
     const ASN1_OCTET_STRING *nonce);
+int ossl_cmp_ctx_push1_rats_nonce(OSSL_CMP_CTX *ctx, const ASN1_OCTET_STRING *nonce);
+int ossl_cmp_get_nonce(OSSL_CMP_CTX *ctx);
 
 /* from cmp_status.c */
 int ossl_cmp_pkisi_get_status(const OSSL_CMP_PKISI *si);

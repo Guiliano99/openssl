@@ -454,3 +454,85 @@ end:
     OSSL_CMP_ITAV_free(itav);
     return res;
 }
+
+/*
+ * Extract all nonces from the NonceResponseValue in the genp ITAV and append
+ * each one to ctx->rats_nonces for subsequent use in attestation evidence.
+ * The ITAV infoType must be NID_id_smime_aa_nonceResponse (placeholder for
+ * id-it-nonceResponse, TBD2).
+ *
+ * Per the draft: an empty OCTET STRING signals the RA/CA could not provide
+ * a nonce for that slot — it is silently skipped, not treated as an error.
+ * The order of stored nonces matches the order of NonceRequest entries sent.
+ */
+static int set_remote_attestation_Nonce(OSSL_CMP_CTX *ctx,
+                                        OSSL_CMP_ITAV *nonce_itav)
+{
+    STACK_OF(OSSL_CMP_NONCERESPONSE) *resps;
+    int i, n, ret = 0;
+
+    if (ctx == NULL || nonce_itav == NULL)
+        goto err;
+
+    if (NID_id_smime_aa_nonceResponse !=
+        OBJ_obj2nid(OSSL_CMP_ITAV_get0_type(nonce_itav)))
+        goto err;
+
+    resps = nonce_itav->infoValue.nonceResponseValue;
+    if (resps == NULL || (n = sk_OSSL_CMP_NONCERESPONSE_num(resps)) < 1)
+        goto err;
+
+    for (i = 0; i < n; i++) {
+        OSSL_CMP_NONCERESPONSE *resp = sk_OSSL_CMP_NONCERESPONSE_value(resps, i);
+
+        if (resp == NULL || resp->nonce == NULL)
+            goto err;
+
+        /* Empty nonce: RA/CA could not provide one for this slot — skip it. */
+        if (ASN1_STRING_length(resp->nonce) == 0)
+            continue;
+
+        if (!ossl_cmp_ctx_push1_rats_nonce(ctx, resp->nonce))
+            goto err;
+    }
+
+    ret = 1;
+ err:
+    OSSL_CMP_ITAV_free(nonce_itav);
+    return ret;
+}
+
+int ossl_cmp_get_nonce(OSSL_CMP_CTX *ctx)
+{
+    OSSL_CMP_ITAV *req, *itav;
+    int len, seq_size;
+
+    if (ctx == NULL) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
+        return 0;
+    }
+
+    len      = ctx->nonce_req_length;           /* 0 = let RA/CA choose */
+    seq_size = ctx->nonce_seq_size > 0 ? ctx->nonce_seq_size : 1;
+
+    /*
+     * Build a NonceRequestValue ITAV under the placeholder OID for
+     * id-it-nonceRequest (TBD1) with seq_size entries, each requesting
+     * a nonce of 'len' bytes.  type and hint are omitted.
+     */
+    if ((req = OSSL_CMP_ITAV_new0_nonceRequestSeq(len, seq_size)) == NULL)
+        return 0;
+
+    /*
+     * The genp carries the NonceResponseValue under the placeholder OID for
+     * id-it-nonceResponse (TBD2).
+     */
+    if ((itav = get_genm_itav(ctx, req, NID_id_smime_aa_nonceResponse,
+                              "nonceResponse")) == NULL)
+        return 0;
+
+    if (!set_remote_attestation_Nonce(ctx, itav))
+        return 0;
+
+    return 1;
+}

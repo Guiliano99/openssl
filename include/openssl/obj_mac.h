@@ -1034,6 +1034,18 @@
 #define NID_id_aa_ets_archiveTimestampV2                1280
 #define OBJ_id_aa_ets_archiveTimestampV2                OBJ_id_smime_aa,48L
 
+#define SN_id_smime_aa_nonce            "id-smime-aa-nonce"
+#define NID_id_smime_aa_nonce           1600
+#define OBJ_id_smime_aa_nonce           OBJ_id_smime_aa,8888L
+
+#define SN_id_smime_aa_nonceResponse            "id-smime-aa-nonceResponse"
+#define NID_id_smime_aa_nonceResponse           1602
+#define OBJ_id_smime_aa_nonceResponse           OBJ_id_smime_aa,8889L
+
+#define SN_id_smime_aa_attestation              "id-smime-aa-attestation"
+#define NID_id_smime_aa_attestation             1603
+#define OBJ_id_smime_aa_attestation             OBJ_id_smime_aa,59L
+
 #define SN_id_smime_alg_ESDHwith3DES            "id-smime-alg-ESDHwith3DES"
 #define NID_id_smime_alg_ESDHwith3DES           241
 #define OBJ_id_smime_alg_ESDHwith3DES           OBJ_id_smime_alg,1L

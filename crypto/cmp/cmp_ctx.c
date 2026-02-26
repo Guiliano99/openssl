@@ -169,6 +169,9 @@ int OSSL_CMP_CTX_reinit(OSSL_CMP_CTX *ctx)
     OSSL_CMP_ITAVs_free(ctx->genm_ITAVs);
     ctx->genm_ITAVs = NULL;
 
+    sk_ASN1_OCTET_STRING_pop_free(ctx->rats_nonces, ASN1_OCTET_STRING_free);
+    ctx->rats_nonces = NULL;
+
     return ossl_cmp_ctx_set0_statusString(ctx, NULL)
         && ossl_cmp_ctx_set0_newCert(ctx, NULL)
         && ossl_cmp_ctx_set1_newChain(ctx, NULL)
@@ -240,6 +243,7 @@ void OSSL_CMP_CTX_free(OSSL_CMP_CTX *ctx)
     OSSL_STACK_OF_X509_free(ctx->newChain);
     OSSL_STACK_OF_X509_free(ctx->caPubs);
     OSSL_STACK_OF_X509_free(ctx->extraCertsIn);
+    sk_ASN1_OCTET_STRING_pop_free(ctx->rats_nonces, ASN1_OCTET_STRING_free);
 
     OPENSSL_free(ctx);
 }
@@ -622,6 +626,8 @@ DEFINE_OSSL_CMP_CTX_get1_certs(caPubs)
      */
     DEFINE_OSSL_CMP_CTX_set1(subjectName, X509_NAME)
 
+    DEFINE_OSSL_CMP_CTX_get0(reqExtensions, X509_EXTENSIONS)
+
     /* Set the X.509v3 certificate request extensions to be used in IR/CR/KUR */
     int OSSL_CMP_CTX_set0_reqExtensions(OSSL_CMP_CTX *ctx, X509_EXTENSIONS *exts)
 {
@@ -813,8 +819,60 @@ DEFINE_set1_ASN1_OCTET_STRING(OSSL_CMP_CTX, transactionID)
     /* store the first req sender nonce for verifying delayed delivery */
     DEFINE_set1_ASN1_OCTET_STRING(ossl_cmp_ctx, first_senderNonce)
 
-    /* Set the proxy server to use for HTTP(S) connections */
-    DEFINE_OSSL_CMP_CTX_set1(proxy, char)
+/* Append a received nonce to the RATS nonce list stored in the context */
+int ossl_cmp_ctx_push1_rats_nonce(OSSL_CMP_CTX *ctx,
+                                   const ASN1_OCTET_STRING *nonce)
+{
+    ASN1_OCTET_STRING *copy;
+
+    if (ctx == NULL || nonce == NULL) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
+        return 0;
+    }
+    if (ctx->rats_nonces == NULL
+            && (ctx->rats_nonces = sk_ASN1_OCTET_STRING_new_null()) == NULL)
+        return 0;
+    if ((copy = ASN1_OCTET_STRING_dup(nonce)) == NULL)
+        return 0;
+    if (!sk_ASN1_OCTET_STRING_push(ctx->rats_nonces, copy)) {
+        ASN1_OCTET_STRING_free(copy);
+        return 0;
+    }
+    return 1;
+}
+
+/*
+ * Return the first stored RATS nonce (backward-compatible single-nonce API).
+ * Returns NULL if no nonces have been stored yet.
+ */
+ASN1_OCTET_STRING *OSSL_CMP_CTX_get0_rats_nonce(const OSSL_CMP_CTX *ctx)
+{
+    if (ctx == NULL) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
+        return NULL;
+    }
+    if (ctx->rats_nonces == NULL
+            || sk_ASN1_OCTET_STRING_num(ctx->rats_nonces) < 1)
+        return NULL;
+    return sk_ASN1_OCTET_STRING_value(ctx->rats_nonces, 0);
+}
+
+/*
+ * Return all stored RATS nonces as an ordered stack, one entry per
+ * NonceResponse received.  The order matches the NonceRequest sequence sent
+ * in the genm.  Returns NULL if no nonces have been stored yet.
+ */
+STACK_OF(ASN1_OCTET_STRING) *OSSL_CMP_CTX_get0_rats_nonces(const OSSL_CMP_CTX *ctx)
+{
+    if (ctx == NULL) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
+        return NULL;
+    }
+    return ctx->rats_nonces;
+}
+
+/* Set the proxy server to use for HTTP(S) connections */
+DEFINE_OSSL_CMP_CTX_set1(proxy, char)
 
     /* Set the (HTTP) hostname of the CMP server */
     DEFINE_OSSL_CMP_CTX_set1(server, char)
@@ -847,6 +905,10 @@ DEFINE_set1_ASN1_OCTET_STRING(OSSL_CMP_CTX, transactionID)
      * Returns callback argument set previously (NULL if not set or on error)
      */
     DEFINE_OSSL_get(OSSL_CMP_CTX, transfer_cb_arg, void *, NULL)
+
+    DEFINE_OSSL_set(OSSL_CMP_CTX, certreq_cb, OSSL_CMP_certreq_cb_t)
+    DEFINE_OSSL_set(OSSL_CMP_CTX, certreq_cb_arg, void *)
+    DEFINE_OSSL_get(OSSL_CMP_CTX, certreq_cb_arg, void *, NULL)
 
     /** Set the HTTP server port to be used */
     DEFINE_OSSL_set(OSSL_CMP_CTX, serverPort, int)
@@ -967,6 +1029,23 @@ DEFINE_set1_ASN1_OCTET_STRING(OSSL_CMP_CTX, transactionID)
         }
         ctx->revocationReason = val;
         break;
+    case OSSL_CMP_OPT_INIT_RATS:
+        ctx->rats_status = val;
+        break;
+    case OSSL_CMP_OPT_NONCE_REQ_LENGTH:
+        if (val < 0) {
+            ERR_raise(ERR_LIB_CMP, CMP_R_VALUE_TOO_LARGE);
+            return 0;
+        }
+        ctx->nonce_req_length = val;
+        break;
+    case OSSL_CMP_OPT_NONCE_SEQ_SIZE:
+        if (val < 0) {
+            ERR_raise(ERR_LIB_CMP, CMP_R_VALUE_TOO_LARGE);
+            return 0;
+        }
+        ctx->nonce_seq_size = val;
+        break;
     default:
         ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_OPTION);
         return 0;
@@ -1029,6 +1108,12 @@ int OSSL_CMP_CTX_get_option(const OSSL_CMP_CTX *ctx, int opt)
         return ctx->permitTAInExtraCertsForIR;
     case OSSL_CMP_OPT_REVOCATION_REASON:
         return ctx->revocationReason;
+    case OSSL_CMP_OPT_INIT_RATS:
+        return ctx->rats_status;
+    case OSSL_CMP_OPT_NONCE_REQ_LENGTH:
+        return ctx->nonce_req_length;
+    case OSSL_CMP_OPT_NONCE_SEQ_SIZE:
+        return ctx->nonce_seq_size;
     default:
         ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_OPTION);
         return -1;

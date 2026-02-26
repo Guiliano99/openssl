@@ -360,6 +360,7 @@ OSSL_CRMF_MSG *OSSL_CMP_CTX_setup_CRM(OSSL_CMP_CTX *ctx, int for_KUR, int rid)
         && !add1_extension(&exts, NID_subject_alt_name,
             crit, ctx->subjectAltNames))
         goto err;
+
     if (ctx->policies != NULL
         && !add1_extension(&exts, NID_certificate_policies,
             ctx->setPoliciesCritical, ctx->policies))

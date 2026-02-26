@@ -142,6 +142,9 @@ static int opt_implicit_confirm = 0;
 static int opt_disable_confirm = 0;
 static char *opt_certout = NULL;
 static char *opt_chainout = NULL;
+static int opt_rats = 0;
+static int opt_nonce_req_length = 32;
+static int opt_nonce_seq_size = 1;
 
 /* certificate enrollment and revocation */
 static char *opt_oldcert = NULL;
@@ -259,6 +262,9 @@ typedef enum OPTION_choice {
     OPT_DISABLE_CONFIRM,
     OPT_CERTOUT,
     OPT_CHAINOUT,
+    OPT_RATS,
+    OPT_NONCE_REQ_LENGTH,
+    OPT_NONCE_SEQ_SIZE,
 
     OPT_OLDCERT,
     OPT_ISSUER,
@@ -446,7 +452,12 @@ const OPTIONS cmp_options[] = {
         "File to save newly enrolled certificate" },
     { "chainout", OPT_CHAINOUT, 's',
         "File to save the chain of newly enrolled certificate" },
-
+     {"rats", OPT_RATS, '-',
+         "Request certificate with remote attestations"},
+        {"nonce_req_length", OPT_NONCE_REQ_LENGTH, 'n',
+         "Requested nonce length in bytes for RATS genm (default 32; use 0 to let server choose)"},
+        {"nonce_seq_size", OPT_NONCE_SEQ_SIZE, 'n',
+         "Number of NonceRequest entries in the RATS genm sequence (default 1)"},
     OPT_SECTION("Certificate enrollment and revocation"),
 
     { "oldcert", OPT_OLDCERT, 's',
@@ -723,7 +734,8 @@ static varref cmp_vars[] = { /* must be in same order as enumerated above! */
     { &opt_out_trusted },
     { (char **)&opt_implicit_confirm }, { (char **)&opt_disable_confirm },
     { &opt_certout }, { &opt_chainout },
-
+        {&opt_certout}, {&opt_chainout}, {(char **)&opt_rats},
+        {(char **)&opt_nonce_req_length}, {(char **)&opt_nonce_seq_size},
     { &opt_oldcert }, { &opt_issuer }, { &opt_serial }, { (char **)&opt_revreason },
 
 #if !defined(OPENSSL_NO_SOCK) && !defined(OPENSSL_NO_HTTP)
@@ -2335,6 +2347,13 @@ set_path:
     if (opt_total_timeout >= 0)
         (void)OSSL_CMP_CTX_set_option(ctx, OSSL_CMP_OPT_TOTAL_TIMEOUT,
             opt_total_timeout);
+    if (opt_rats)
+        (void)OSSL_CMP_CTX_set_option(ctx, OSSL_CMP_OPT_INIT_RATS, 1);
+    (void)OSSL_CMP_CTX_set_option(ctx, OSSL_CMP_OPT_NONCE_REQ_LENGTH,
+                                  opt_nonce_req_length);
+    if (opt_nonce_seq_size > 1)
+        (void)OSSL_CMP_CTX_set_option(ctx, OSSL_CMP_OPT_NONCE_SEQ_SIZE,
+                                      opt_nonce_seq_size);
 
     if (opt_rspin != NULL) {
         rspin_in_use = 1;
@@ -3100,6 +3119,23 @@ static int get_opts(int argc, char **argv)
         case OPT_CHAINOUT:
             opt_chainout = opt_str();
             break;
+        case OPT_RATS:
+            opt_rats = 1;
+            break;
+        case OPT_NONCE_REQ_LENGTH:
+            opt_nonce_req_length = opt_int_arg();
+            if (opt_nonce_req_length < 0) {
+                CMP_err("invalid -nonce_req_length: must be >= 0");
+                goto opthelp;
+            }
+            break;
+        case OPT_NONCE_SEQ_SIZE:
+            opt_nonce_seq_size = opt_int_arg();
+            if (opt_nonce_seq_size < 1) {
+                CMP_err("invalid -nonce_seq_size: must be >= 1");
+                goto opthelp;
+            }
+            break;
         case OPT_OLDCERT:
             opt_oldcert = opt_str();
             break;
@@ -3603,6 +3639,36 @@ static int do_genm(OSSL_CMP_CTX *ctx)
         OSSL_CRMF_CERTTEMPLATE_free(certTemplate);
         sk_OSSL_CMP_ATAV_pop_free(keySpec, OSSL_CMP_ATAV_free);
         return res;
+    } else if (opt_rats && opt_infotype == NID_undef) {
+        /*
+         * RATS nonce request via -cmd genm -rats [-nonce_req_length N]
+         *                                        [-nonce_seq_size M].
+         * Build a proper NonceRequestValue ITAV using the parsed arguments so
+         * the server receives well-formed content instead of an empty genm.
+         */
+        OSSL_CMP_ITAV *req;
+        STACK_OF(OSSL_CMP_ITAV) *itavs;
+        int seq_size = opt_nonce_seq_size > 0 ? opt_nonce_seq_size : 1;
+
+        req = OSSL_CMP_ITAV_new0_nonceRequestSeq(opt_nonce_req_length, seq_size);
+        if (req == NULL) {
+            CMP_err("Failed to build nonceRequest ITAV for genm");
+            return 0;
+        }
+        if (!OSSL_CMP_CTX_push0_genm_ITAV(ctx, req)) {
+            OSSL_CMP_ITAV_free(req);
+            CMP_err("Failed to push nonceRequest ITAV for genm");
+            return 0;
+        }
+        if ((itavs = OSSL_CMP_exec_GENM_ses(ctx)) != NULL) {
+            int res = print_itavs(itavs);
+
+            sk_OSSL_CMP_ITAV_pop_free(itavs, OSSL_CMP_ITAV_free);
+            return res;
+        }
+        if (OSSL_CMP_CTX_get_status(ctx) != OSSL_CMP_PKISTATUS_request)
+            CMP_err("Did not receive response on genm or genp is not valid");
+        return 0;
     } else {
         OSSL_CMP_ITAV *req;
         STACK_OF(OSSL_CMP_ITAV) *itavs;
