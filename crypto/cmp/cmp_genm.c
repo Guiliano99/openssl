@@ -490,50 +490,23 @@ static int set_remote_attestation_Nonce(OSSL_CMP_CTX *ctx,
 int ossl_cmp_get_nonce(OSSL_CMP_CTX *ctx)
 {
     OSSL_CMP_ITAV *req, *itav;
-    int len, seq_size, i;
+    int len, seq_size;
 
     if (ctx == NULL) {
         ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
         return 0;
     }
 
-    len = ctx->nonce_req_length;           /* 0 = let RA/CA choose length */
+    len      = ctx->nonce_req_length;           /* 0 = let RA/CA choose */
     seq_size = ctx->nonce_seq_size > 0 ? ctx->nonce_seq_size : 1;
 
     /*
      * Build a NonceRequestValue ITAV under the placeholder OID for
-     * id-it-nonceRequest (TBD1).  The first entry uses the configured len;
-     * type and hint are omitted (let the RA/CA decide).
+     * id-it-nonceRequest (TBD1) with seq_size entries, each requesting
+     * a nonce of 'len' bytes.  type and hint are omitted.
      */
-    if ((req = OSSL_CMP_ITAV_new0_nonceRequest(len, NULL, NULL)) == NULL)
+    if ((req = OSSL_CMP_ITAV_new0_nonceRequestSeq(len, seq_size)) == NULL)
         return 0;
-
-    /*
-     * For nonce_seq_size > 1, append additional NonceRequest entries to the
-     * same ITAV's sequence, each requesting the same length.
-     */
-    for (i = 1; i < seq_size; i++) {
-        OSSL_CMP_NONCEREQUEST *entry = OSSL_CMP_NONCEREQUEST_new();
-
-        if (entry == NULL) {
-            OSSL_CMP_ITAV_free(req);
-            return 0;
-        }
-        if (len > 0) {
-            if ((entry->len = ASN1_INTEGER_new()) == NULL
-                    || !ASN1_INTEGER_set(entry->len, len)) {
-                OSSL_CMP_NONCEREQUEST_free(entry);
-                OSSL_CMP_ITAV_free(req);
-                return 0;
-            }
-        }
-        if (!sk_OSSL_CMP_NONCEREQUEST_push(req->infoValue.nonceRequestValue,
-                                           entry)) {
-            OSSL_CMP_NONCEREQUEST_free(entry);
-            OSSL_CMP_ITAV_free(req);
-            return 0;
-        }
-    }
 
     /*
      * The genp carries the NonceResponseValue under the placeholder OID for
