@@ -3577,6 +3577,36 @@ static int do_genm(OSSL_CMP_CTX *ctx)
         OSSL_CRMF_CERTTEMPLATE_free(certTemplate);
         sk_OSSL_CMP_ATAV_pop_free(keySpec, OSSL_CMP_ATAV_free);
         return res;
+    } else if (opt_rats && opt_infotype == NID_undef) {
+        /*
+         * RATS nonce request via -cmd genm -rats [-nonce_req_length N]
+         *                                        [-nonce_seq_size M].
+         * Build a proper NonceRequestValue ITAV using the parsed arguments so
+         * the server receives well-formed content instead of an empty genm.
+         */
+        OSSL_CMP_ITAV *req;
+        STACK_OF(OSSL_CMP_ITAV) *itavs;
+        int seq_size = opt_nonce_seq_size > 0 ? opt_nonce_seq_size : 1;
+
+        req = OSSL_CMP_ITAV_new0_nonceRequestSeq(opt_nonce_req_length, seq_size);
+        if (req == NULL) {
+            CMP_err("Failed to build nonceRequest ITAV for genm");
+            return 0;
+        }
+        if (!OSSL_CMP_CTX_push0_genm_ITAV(ctx, req)) {
+            OSSL_CMP_ITAV_free(req);
+            CMP_err("Failed to push nonceRequest ITAV for genm");
+            return 0;
+        }
+        if ((itavs = OSSL_CMP_exec_GENM_ses(ctx)) != NULL) {
+            int res = print_itavs(itavs);
+
+            sk_OSSL_CMP_ITAV_pop_free(itavs, OSSL_CMP_ITAV_free);
+            return res;
+        }
+        if (OSSL_CMP_CTX_get_status(ctx) != OSSL_CMP_PKISTATUS_request)
+            CMP_err("Did not receive response on genm or genp is not valid");
+        return 0;
     } else {
         OSSL_CMP_ITAV *req;
         STACK_OF(OSSL_CMP_ITAV) *itavs;
