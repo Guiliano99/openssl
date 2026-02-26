@@ -340,6 +340,8 @@ OSSL_CMP_ITAV *OSSL_CMP_ITAV_new_ratsnonce(const unsigned char *nonce, int len);
 /* Build id-it-nonceRequest ITAV (placeholder OID: NID_id_smime_aa_nonce). */
 OSSL_CMP_ITAV *OSSL_CMP_ITAV_new0_nonceRequest(int len, ASN1_OBJECT *type,
                                                 const char *hint);
+/* Build a multi-entry nonceRequest ITAV with 'count' NonceRequest entries. */
+OSSL_CMP_ITAV *OSSL_CMP_ITAV_new0_nonceRequestSeq(int len, int count);
 
 void OSSL_CMP_MSG_free(OSSL_CMP_MSG *msg);
 
