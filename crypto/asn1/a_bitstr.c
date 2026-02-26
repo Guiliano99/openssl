@@ -13,6 +13,27 @@
 #include <openssl/asn1.h>
 #include "asn1_local.h"
 
+#include <crypto/asn1.h>
+
+static void
+asn1_bit_string_clear_unused_bits(ASN1_BIT_STRING *abs)
+{
+    abs->flags &= ~(ASN1_STRING_FLAG_BITS_LEFT | 0x07);
+}
+
+static int asn1_bit_string_set_unused_bits(ASN1_BIT_STRING *abs,
+    uint8_t unused_bits)
+{
+    if (unused_bits > 7)
+        return 0;
+
+    asn1_bit_string_clear_unused_bits(abs);
+
+    abs->flags |= ASN1_STRING_FLAG_BITS_LEFT | unused_bits;
+
+    return 1;
+}
+
 int ASN1_BIT_STRING_set(ASN1_BIT_STRING *x, unsigned char *d, int len)
 {
     return ASN1_STRING_set(x, d, len);
@@ -58,7 +79,7 @@ int ossl_i2c_ASN1_BIT_STRING(ASN1_BIT_STRING *a, unsigned char **pp)
                 else if (j & 0x80)
                     bits = 7;
                 else
-                    bits = 0;       /* should not happen */
+                    bits = 0; /* should not happen */
             }
         }
     } else
@@ -82,7 +103,7 @@ int ossl_i2c_ASN1_BIT_STRING(ASN1_BIT_STRING *a, unsigned char **pp)
 }
 
 ASN1_BIT_STRING *ossl_c2i_ASN1_BIT_STRING(ASN1_BIT_STRING **a,
-                                          const unsigned char **pp, long len)
+    const unsigned char **pp, long len)
 {
     ASN1_BIT_STRING *ret = NULL;
     const unsigned char *p;
@@ -117,7 +138,7 @@ ASN1_BIT_STRING *ossl_c2i_ASN1_BIT_STRING(ASN1_BIT_STRING **a,
      */
     ossl_asn1_string_set_bits_left(ret, i);
 
-    if (len-- > 1) {            /* using one because of the bits left byte */
+    if (len-- > 1) { /* using one because of the bits left byte */
         s = OPENSSL_malloc((int)len);
         if (s == NULL) {
             goto err;
@@ -134,7 +155,7 @@ ASN1_BIT_STRING *ossl_c2i_ASN1_BIT_STRING(ASN1_BIT_STRING **a,
         (*a) = ret;
     *pp = p;
     return ret;
- err:
+err:
     if (i != 0)
         ERR_raise(ERR_LIB_ASN1, i);
     if ((a == NULL) || (*a != ret))
@@ -166,7 +187,7 @@ int ASN1_BIT_STRING_set_bit(ASN1_BIT_STRING *a, int n, int value)
 
     if ((a->length < (w + 1)) || (a->data == NULL)) {
         if (!value)
-            return 1;         /* Don't need to set */
+            return 1; /* Don't need to set */
         c = OPENSSL_clear_realloc(a->data, a->length, w + 1);
         if (c == NULL)
             return 0;
@@ -202,7 +223,7 @@ int ASN1_BIT_STRING_get_bit(const ASN1_BIT_STRING *a, int n)
  * 'len' is the length of 'flags'.
  */
 int ASN1_BIT_STRING_check(const ASN1_BIT_STRING *a,
-                          const unsigned char *flags, int flags_len)
+    const unsigned char *flags, int flags_len)
 {
     int i, ok;
     /* Check if there is one bit set at all. */
@@ -219,4 +240,65 @@ int ASN1_BIT_STRING_check(const ASN1_BIT_STRING *a,
         ok = (a->data[i] & mask) == 0;
     }
     return ok;
+}
+
+int ASN1_BIT_STRING_get_length(const ASN1_BIT_STRING *abs, size_t *out_length,
+    int *out_unused_bits)
+{
+    size_t length;
+    int unused_bits;
+
+    if (abs == NULL || abs->type != V_ASN1_BIT_STRING)
+        return 0;
+
+    if (out_length == NULL || out_unused_bits == NULL)
+        return 0;
+
+    length = abs->length;
+    unused_bits = 0;
+
+    if ((abs->flags & ASN1_STRING_FLAG_BITS_LEFT) != 0)
+        unused_bits = abs->flags & 0x07;
+
+    if (length == 0 && unused_bits != 0)
+        return 0;
+
+    if (unused_bits != 0) {
+        unsigned char mask = (1 << unused_bits) - 1;
+        if ((abs->data[length - 1] & mask) != 0)
+            return 0;
+    }
+
+    *out_length = length;
+    *out_unused_bits = unused_bits;
+
+    return 1;
+}
+
+int ASN1_BIT_STRING_set1(ASN1_BIT_STRING *abs, const uint8_t *data, size_t length,
+    int unused_bits)
+{
+    if (abs == NULL)
+        return 0;
+
+    if (length > INT_MAX || unused_bits < 0 || unused_bits > 7)
+        return 0;
+
+    if (length == 0 && unused_bits != 0)
+        return 0;
+
+    if (length > 0 && (data[length - 1] & ((1 << unused_bits) - 1)) != 0)
+        return 0;
+
+    /*
+     * XXX - ASN1_STRING_set() and asn1_bit_string_set_unused_bits() preserve the
+     * state of flags irrelevant to ASN1_BIT_STRING. Should we explicitly
+     * clear them?
+     */
+
+    if (!ASN1_STRING_set(abs, data, (int)length))
+        return 0;
+    abs->type = V_ASN1_BIT_STRING;
+
+    return asn1_bit_string_set_unused_bits(abs, unused_bits);
 }

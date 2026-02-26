@@ -50,13 +50,13 @@ map { s/\^// } @conf_files if $^O eq "VMS";
 
 # Some test results depend on the configuration of enabled protocols. We only
 # verify generated sources in the default configuration.
-my $is_default_tls = (disabled("ssl3") && !disabled("tls1") &&
-                      !disabled("tls1_1") && !disabled("tls1_2") &&
-                      !disabled("tls1_3") && (!disabled("ec") || !disabled("dh")));
+my $is_default_tls = (!disabled("tls1") && !disabled("tls1_1") &&
+	              !disabled("tls1_2") && !disabled("tls1_3") &&
+		      (!disabled("ec") || !disabled("dh")));
 
 my $is_default_dtls = (!disabled("dtls1") && !disabled("dtls1_2"));
 
-my @all_pre_tls1_3 = ("ssl3", "tls1", "tls1_1", "tls1_2");
+my @all_pre_tls1_3 = ("tls1", "tls1_1", "tls1_2");
 my $no_tls = alldisabled(available_protocols("tls"));
 my $no_tls_below1_3 = $no_tls || (disabled("tls1_2") && !disabled("tls1_3"));
 if (!$no_tls && $no_tls_below1_3 && disabled("ec") && disabled("dh")) {
@@ -91,7 +91,9 @@ my %conf_dependent_tests = (
   "19-mac-then-encrypt.cnf" => !$is_default_tls,
   "20-cert-select.cnf" => !$is_default_tls || $no_dh || $no_dsa || $no_ml_dsa,
   "22-compression.cnf" => !$is_default_tls,
-  "25-cipher.cnf" => disabled("poly1305") || disabled("chacha"),
+  "25-cipher.cnf" => disabled("poly1305") || disabled("chacha")
+                     || disabled("sm3") || disabled("sm4")
+                     || disabled("tls1_3"),
   "27-ticket-appdata.cnf" => !$is_default_tls,
   "28-seclevel.cnf" => disabled("tls1_2") || $no_ecx,
   "30-extended-master-secret.cnf" => disabled("tls1_2"),

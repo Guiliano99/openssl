@@ -37,7 +37,7 @@ B<openssl> B<s_client>
 [B<-CRLform> B<DER>|B<PEM>]
 [B<-crl_download>]
 [B<-key> I<filename>|I<uri>]
-[B<-keyform> B<DER>|B<PEM>|B<P12>|B<ENGINE>]
+[B<-keyform> B<DER>|B<PEM>|B<P12>]
 [B<-pass> I<arg>]
 [B<-chainCAfile> I<filename>]
 [B<-chainCApath> I<directory>]
@@ -94,6 +94,8 @@ B<openssl> B<s_client>
 [B<-sess_in> I<filename>]
 [B<-serverinfo> I<types>]
 [B<-status>]
+[B<-ocsp_check_leaf>]
+[B<-ocsp_check_all>]
 [B<-alpn> I<protocols>]
 [B<-nextprotoneg> I<protocols>]
 [B<-ct>]
@@ -117,7 +119,6 @@ B<openssl> B<s_client>
 {- $OpenSSL::safe::opt_s_synopsis -}
 {- $OpenSSL::safe::opt_r_synopsis -}
 {- $OpenSSL::safe::opt_provider_synopsis -}
-{- $OpenSSL::safe::opt_engine_synopsis -}[B<-ssl_client_engine> I<id>]
 {- $OpenSSL::safe::opt_v_synopsis -}
 [B<-enable_server_rpk>]
 [B<-enable_client_rpk>]
@@ -272,7 +273,7 @@ of CRL is limited by L<X509_CRL_load_http(3)> function.
 The client private key to use.
 If not specified then the certificate file will be used to read also the key.
 
-=item B<-keyform> B<DER>|B<PEM>|B<P12>|B<ENGINE>
+=item B<-keyform> B<DER>|B<PEM>|B<P12>
 
 The key format; unspecified by default.
 See L<openssl-format-options(1)> for details.
@@ -507,12 +508,12 @@ by some servers.
 =item B<-ign_eof>
 
 Inhibit shutting down the connection when end of file is reached in the
-input.
+input. This implicitly turns on B<-nocommands> as well.
 
 =item B<-quiet>
 
 Inhibit printing of session and certificate information.  This implicitly
-turns on B<-ign_eof> as well.
+turns on B<-ign_eof> and B<-nocommands> as well.
 
 =item B<-no_ign_eof>
 
@@ -557,9 +558,8 @@ Send TLS_FALLBACK_SCSV in the ClientHello.
 =item B<-async>
 
 Switch on asynchronous mode. Cryptographic operations will be performed
-asynchronously. This will only have an effect if an asynchronous capable engine
-is also used via the B<-engine> option. For test purposes the dummy async engine
-(dasync) can be used (if available).
+asynchronously. This will only have an effect if an asynchronous capable
+provider is also used.
 
 =item B<-maxfraglen> I<len>
 
@@ -573,19 +573,15 @@ See L<SSL_CTX_set_max_send_fragment(3)> for further information.
 
 =item B<-split_send_frag> I<int>
 
-The size used to split data for encrypt pipelines. If more data is written in
-one go than this value then it will be split into multiple pipelines, up to the
-maximum number of pipelines defined by max_pipelines. This only has an effect if
-a suitable cipher suite has been negotiated, an engine that supports pipelining
-has been loaded, and max_pipelines is greater than 1. See
-L<SSL_CTX_set_split_send_fragment(3)> for further information.
+This is used for pipelines. There is currently B<no support> for cipher
+pipelining in libssl. See L<SSL_CTX_set_max_send_fragment(3)> for further
+information.
 
 =item B<-max_pipelines> I<int>
 
-The maximum number of encrypt/decrypt pipelines to be used. This will only have
-an effect if an engine has been loaded that supports pipelining (e.g. the dasync
-engine) and a suitable cipher suite has been negotiated. The default value is 1.
-See L<SSL_CTX_set_max_pipelines(3)> for further information.
+This is used for pipelines. There is currently B<no support> for cipher
+pipelining in libssl. See L<SSL_CTX_set_max_send_fragment(3)> for further
+information.
 
 =item B<-read_buf> I<int>
 
@@ -670,6 +666,24 @@ file.
 
 Sends a certificate status request to the server (OCSP stapling). The server
 response (if any) is printed out.
+
+=item B<-ocsp_check_leaf>
+
+Require performing server (end-entity) certificate status checking, where any
+OCSP response provided in the TLS handshake (by so-called "OCSP stapling") is tried
+first.
+If no valid and conclusive OCSP response can be found, CRL-based checking
+is attempted as fallback if enabled, otherwise the status check fails.
+
+This implies B<-status>.
+
+=item B<-ocsp_check_all>
+
+As the option before, but require performing certificate status checking also
+for the issuer chain of the server certificate (i.e., intermediate CA certificates,
+excluding the trust anchor).
+
+This implies the B<-status> and B<-ocsp_check_leaf>.
 
 =item B<-alpn> I<protocols>, B<-nextprotoneg> I<protocols>
 
@@ -764,14 +778,6 @@ Enable creation of connections via TCP fast open (RFC7413).
 {- $OpenSSL::safe::opt_r_item -}
 
 {- $OpenSSL::safe::opt_provider_item -}
-
-{- $OpenSSL::safe::opt_engine_item -}
-
-{- output_off() if $disabled{"deprecated-3.0"}; "" -}
-=item B<-ssl_client_engine> I<id>
-
-Specify engine to be used for client certificate operations.
-{- output_on() if $disabled{"deprecated-3.0"}; "" -}
 
 {- $OpenSSL::safe::opt_v_item -}
 
@@ -906,7 +912,7 @@ then an HTTP command can be given such as "GET /" to retrieve a web page.
 
 If the handshake fails then there are several possible causes, if it is
 nothing obvious like no client certificate then the B<-bugs>,
-B<-ssl3>, B<-tls1>, B<-no_ssl3>, B<-no_tls1> options can be tried
+B<-tls1>, B<-no_tls1> options can be tried
 in case it is a buggy server. In particular you should play with these
 options B<before> submitting a bug report to an OpenSSL mailing list.
 
@@ -1013,7 +1019,7 @@ The B<-name> option was added in OpenSSL 1.1.1.
 
 The B<-certform> option has become obsolete in OpenSSL 3.0.0 and has no effect.
 
-The B<-engine> option was deprecated in OpenSSL 3.0.
+The B<-engine> option was removed in OpenSSL 4.0.
 
 The
 B<-enable_client_rpk>,
@@ -1022,6 +1028,11 @@ B<-no_rx_cert_comp>,
 B<-no_tx_cert_comp>,
 and B<-tfo>
 options were added in OpenSSL 3.2.
+
+The
+<-ocsp_check_leaf>
+and B<-ocsp_check_all>
+options were added in OpenSSL 3.6.
 
 =head1 COPYRIGHT
 

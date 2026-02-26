@@ -6,7 +6,7 @@ EVP_SIGNATURE-ED25519,
 EVP_SIGNATURE-ED448,
 Ed25519,
 Ed448
-- EVP_PKEY Ed25519 and Ed448 support
+- The EVP_PKEY B<Ed25519> and B<Ed448> signature implementations
 
 =head1 DESCRIPTION
 
@@ -133,6 +133,9 @@ Ed25519 and Ed448 can be tested with the L<openssl-speed(1)> application
 since version 1.1.1.
 Valid algorithm names are B<ed25519>, B<ed448> and B<eddsa>. If B<eddsa> is
 specified, then both Ed25519 and Ed448 are benchmarked.
+
+Since Ed25519ctx is not included in FIPS 186-5, it is not present
+in the FIPS provider.
 
 =head1 EXAMPLES
 

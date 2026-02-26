@@ -1,5 +1,5 @@
 #! /usr/bin/env perl
-# Copyright 2005-2024 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2005-2025 The OpenSSL Project Authors. All Rights Reserved.
 #
 # Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
@@ -284,7 +284,7 @@ $code.=<<___ if ($SZ==4 || $avx);
     mov 0(%r10),%r9
     mov 8(%r10),%r11d
 ___
-$code.=<<___ if ($SZ==8);
+$code.=<<___ if ($SZ==8 && $avx>1);
     mov 20(%r10),%r10d
 ___
 if ($SZ==4) {
@@ -306,12 +306,8 @@ if ($avx>1) { # $SZ==8 && $avx>1
 $code.=<<___;
     test \$`1<<5`,%r11d             # check for AVX2
     jz   .Lavx_dispatch
-___
-$code.=<<___ if ($SZ==8);
     test \$`1<<0`,%r10d             # AVX2 confirmed, check SHA512
     jnz  .Lsha512ext_shortcut
-___
-$code.=<<___;
     and \$`1<<8|1<<3`,%r11d         # AVX2 confirmed, check BMI2+BMI1
     cmp \$`1<<8|1<<3`,%r11d
     je  .Lavx2_shortcut
@@ -578,7 +574,9 @@ $TABLE:
 	.quad	0x0001020304050607,0x08090a0b0c0d0e0f
 	.quad	0x0001020304050607,0x08090a0b0c0d0e0f
 	.asciz	"SHA512 block transform for x86_64, CRYPTOGAMS by <https://github.com/dot-asm>"
+___
 
+$code.=<<___ if ($avx>1);
 # $K512 duplicates data every 16 bytes.
 # The Intel(R) SHA512 implementation requires reads of 32 consecutive bytes.
 .align 64
@@ -624,6 +622,8 @@ ${TABLE}_single:
     .quad 0x3c9ebe0a15c9bebc, 0x431d67c49c100d4c
     .quad 0x4cc5d4becb3e42b6, 0x597f299cfc657e2a
     .quad 0x5fcb6fab3ad6faec, 0x6c44198c4a475817
+___
+$code.=<<___;
 .previous
 ___
 }
@@ -2383,7 +2383,7 @@ ___
 }}
 }}}}}
 
-if ($SZ==8) {
+if ($SZ==8 && $avx>1) {
 $code.=<<___;
 .type ${func}_sha512ext,\@function,3
 .align 64

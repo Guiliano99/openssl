@@ -8,8 +8,10 @@
  */
 
 #ifndef OSSL_INTERNAL_ERR_H
-# define OSSL_INTERNAL_ERR_H
-# pragma once
+#define OSSL_INTERNAL_ERR_H
+#pragma once
+
+#define ERR_NUM_ERRORS 16
 
 void err_free_strings_int(void);
 

@@ -18,8 +18,8 @@
 /* CMS DigestedData Utilities */
 
 CMS_ContentInfo *ossl_cms_DigestedData_create(const EVP_MD *md,
-                                              OSSL_LIB_CTX *libctx,
-                                              const char *propq)
+    OSSL_LIB_CTX *libctx,
+    const char *propq)
 {
     CMS_ContentInfo *cms;
     CMS_DigestedData *dd;
@@ -39,11 +39,12 @@ CMS_ContentInfo *ossl_cms_DigestedData_create(const EVP_MD *md,
     dd->version = 0;
     dd->encapContentInfo->eContentType = OBJ_nid2obj(NID_pkcs7_data);
 
-    X509_ALGOR_set_md(dd->digestAlgorithm, md);
+    if (!X509_ALGOR_set_md(dd->digestAlgorithm, md))
+        goto err;
 
     return cms;
 
- err:
+err:
     CMS_ContentInfo_free(cms);
     return NULL;
 }
@@ -53,11 +54,11 @@ BIO *ossl_cms_DigestedData_init_bio(const CMS_ContentInfo *cms)
     CMS_DigestedData *dd = cms->d.digestedData;
 
     return ossl_cms_DigestAlgorithm_init_bio(dd->digestAlgorithm,
-                                             ossl_cms_get0_cmsctx(cms));
+        ossl_cms_get0_cmsctx(cms));
 }
 
 int ossl_cms_DigestedData_do_final(const CMS_ContentInfo *cms, BIO *chain,
-                                   int verify)
+    int verify)
 {
     EVP_MD_CTX *mctx = EVP_MD_CTX_new();
     unsigned char md[EVP_MAX_MD_SIZE];
@@ -94,9 +95,8 @@ int ossl_cms_DigestedData_do_final(const CMS_ContentInfo *cms, BIO *chain,
         r = 1;
     }
 
- err:
+err:
     EVP_MD_CTX_free(mctx);
 
     return r;
-
 }

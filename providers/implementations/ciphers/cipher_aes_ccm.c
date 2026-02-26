@@ -24,9 +24,7 @@ static void *aes_ccm_newctx(void *provctx, size_t keybits)
 {
     PROV_AES_CCM_CTX *ctx;
 
-    if (!ossl_prov_is_running())
-        return NULL;
-
+    CIPHER_PROV_CHECK(provctx, AES_128_CCM);
     ctx = OPENSSL_zalloc(sizeof(*ctx));
     if (ctx != NULL)
         ossl_ccm_initctx(&ctx->base, keybits, ossl_prov_aes_hw_ccm(keybits));
@@ -61,7 +59,7 @@ static void aes_ccm_freectx(void *vctx)
 {
     PROV_AES_CCM_CTX *ctx = (PROV_AES_CCM_CTX *)vctx;
 
-    OPENSSL_clear_free(ctx,  sizeof(*ctx));
+    OPENSSL_clear_free(ctx, sizeof(*ctx));
 }
 
 /* ossl_aes128ccm_functions */
