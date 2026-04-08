@@ -502,10 +502,15 @@ int ossl_cmp_get_nonce(OSSL_CMP_CTX *ctx)
 
     /*
      * Build a NonceRequestValue ITAV under the placeholder OID for
-     * id-it-nonceRequest (TBD1) with seq_size entries, each requesting
-     * a nonce of 'len' bytes.  type and hint are omitted.
+     * id-it-nonceRequest (TBD1).  When a verifier hint is configured,
+     * use the single-entry constructor so we can pass the hint through;
+     * otherwise fall back to the seq constructor (hint omitted).
      */
-    if ((req = OSSL_CMP_ITAV_new0_nonceRequestSeq(len, seq_size)) == NULL)
+    if (ctx->nonce_hint != NULL)
+        req = OSSL_CMP_ITAV_new0_nonceRequest(len, NULL, ctx->nonce_hint);
+    else
+        req = OSSL_CMP_ITAV_new0_nonceRequestSeq(len, seq_size);
+    if (req == NULL)
         return 0;
 
     /*

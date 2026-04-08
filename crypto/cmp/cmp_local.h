@@ -125,6 +125,7 @@ struct ossl_cmp_ctx_st {
     int rats_status; /* Remote attestation procedures (RATS) status */
     int nonce_req_length; /* requested nonce length in bytes (0 = server chooses) */
     int nonce_seq_size;   /* number of NonceRequest entries in genm sequence (0 = default 1) */
+    char *nonce_hint;     /* RATS: verifier hint (FQDN/URI) for NonceRequest */
     STACK_OF(ASN1_OCTET_STRING) *rats_nonces; /* all RATS nonces received from RA/CA */
 
     /* misc body contents */
