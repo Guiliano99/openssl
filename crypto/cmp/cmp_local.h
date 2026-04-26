@@ -117,6 +117,8 @@ struct ossl_cmp_ctx_st {
     int nonce_req_length; /* requested nonce length in bytes (0 = server chooses) */
     int nonce_seq_size;   /* number of NonceRequest entries in genm sequence (0 = default 1) */
     STACK_OF(ASN1_OCTET_STRING) *rats_nonces; /* all RATS nonces received from RA/CA */
+    char *nonce_hint; /* FQDN/URI of the Verifier to be used for nonce issuance
+                       * (NonceRequest.hint UTF8String OPTIONAL); NULL = omit */
 
     /* misc body contents */
     int revocationReason; /* revocation reason code to be included in RR */

@@ -5709,6 +5709,8 @@ OSSL_CMP_ITAV_new0_nonceRequest         ?	4_0_0	EXIST::FUNCTION:CMP
 OSSL_CMP_ITAV_new0_nonceRequestSeq      ?	4_0_0	EXIST::FUNCTION:CMP
 OSSL_CMP_CTX_get0_rats_nonce            ?	4_0_0	EXIST::FUNCTION:CMP
 OSSL_CMP_CTX_get0_rats_nonces           ?	4_0_0	EXIST::FUNCTION:CMP
+OSSL_CMP_CTX_set1_nonce_hint            ?	4_0_0	EXIST::FUNCTION:CMP
+OSSL_CMP_CTX_get0_nonce_hint            ?	4_0_0	EXIST::FUNCTION:CMP
 OSSL_CMP_CTX_get0_reqExtensions         ?	4_0_0	EXIST::FUNCTION:CMP
 OSSL_CMP_certreq_cb                     ?	4_0_0	EXIST::FUNCTION:CMP
 OSSL_CMP_CTX_set_certreq_cb             ?	4_0_0	EXIST::FUNCTION:CMP

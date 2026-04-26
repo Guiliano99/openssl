@@ -518,10 +518,37 @@ int ossl_cmp_get_nonce(OSSL_CMP_CTX *ctx)
     /*
      * Build a NonceRequestValue ITAV under the placeholder OID for
      * id-it-nonceRequest (TBD1) with seq_size entries, each requesting
-     * a nonce of 'len' bytes.  type and hint are omitted.
+     * a nonce of 'len' bytes.  type is omitted; hint is applied below if set.
      */
     if ((req = OSSL_CMP_ITAV_new0_nonceRequestSeq(len, seq_size)) == NULL)
         return 0;
+
+    /*
+     * If a Verifier hint is configured on the CTX, apply it to every
+     * NonceRequest entry in the sequence so the CMP server knows which
+     * Verifier to route this nonce request to.  Servers that don't support
+     * hint-based routing ignore the field.
+     */
+    if (ctx->nonce_hint != NULL) {
+        STACK_OF(OSSL_CMP_NONCEREQUEST) *sk = req->infoValue.nonceRequestValue;
+        int i, n = sk_OSSL_CMP_NONCEREQUEST_num(sk);
+
+        for (i = 0; i < n; i++) {
+            OSSL_CMP_NONCEREQUEST *entry = sk_OSSL_CMP_NONCEREQUEST_value(sk, i);
+            ASN1_UTF8STRING *hint;
+
+            if (entry == NULL)
+                continue;
+            if ((hint = ASN1_UTF8STRING_new()) == NULL
+                    || !ASN1_STRING_set(hint, ctx->nonce_hint, -1)) {
+                ASN1_UTF8STRING_free(hint);
+                OSSL_CMP_ITAV_free(req);
+                return 0;
+            }
+            ASN1_UTF8STRING_free(entry->hint);
+            entry->hint = hint;
+        }
+    }
 
     /*
      * The genp carries the NonceResponseValue under the placeholder OID for

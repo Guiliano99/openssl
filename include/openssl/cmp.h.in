@@ -402,6 +402,11 @@ int OSSL_CMP_CTX_set_log_cb(OSSL_CMP_CTX *ctx, OSSL_CMP_log_cb_t cb);
 void OSSL_CMP_CTX_print_errors(const OSSL_CMP_CTX *ctx);
 ASN1_OCTET_STRING *OSSL_CMP_CTX_get0_rats_nonce(const OSSL_CMP_CTX *ctx);
 STACK_OF(ASN1_OCTET_STRING) *OSSL_CMP_CTX_get0_rats_nonces(const OSSL_CMP_CTX *ctx);
+/* RATS Verifier hint (NonceRequest.hint UTF8String OPTIONAL) — FQDN/URI that
+ * tells the CMP server which Verifier to route the nonce request to.  Pass
+ * NULL to clear.  Servers that do not support hint-based routing ignore it. */
+int OSSL_CMP_CTX_set1_nonce_hint(OSSL_CMP_CTX *ctx, const char *hint);
+const char *OSSL_CMP_CTX_get0_nonce_hint(const OSSL_CMP_CTX *ctx);
 /* message transfer: */
 int OSSL_CMP_CTX_set1_serverPath(OSSL_CMP_CTX *ctx, const char *path);
 int OSSL_CMP_CTX_set1_server(OSSL_CMP_CTX *ctx, const char *address);

@@ -244,6 +244,7 @@ void OSSL_CMP_CTX_free(OSSL_CMP_CTX *ctx)
     OSSL_STACK_OF_X509_free(ctx->caPubs);
     OSSL_STACK_OF_X509_free(ctx->extraCertsIn);
     sk_ASN1_OCTET_STRING_pop_free(ctx->rats_nonces, ASN1_OCTET_STRING_free);
+    OPENSSL_free(ctx->nonce_hint);
 
     OPENSSL_free(ctx);
 }
@@ -869,6 +870,45 @@ STACK_OF(ASN1_OCTET_STRING) *OSSL_CMP_CTX_get0_rats_nonces(const OSSL_CMP_CTX *c
         return NULL;
     }
     return ctx->rats_nonces;
+}
+
+/*
+ * Set the Verifier hint for RATS nonce requests.
+ *
+ * The hint is an FQDN/URI that identifies which Verifier the CMP server should
+ * route the NonceRequest to (NonceRequest.hint UTF8String OPTIONAL).  Set to
+ * NULL to clear a previously-set hint.
+ *
+ * The hint is consumed by ossl_cmp_get_nonce() when building the genm
+ * carrying the NonceRequest, and it is OPTIONAL — a server that does not
+ * support hint-based routing is free to ignore it.
+ */
+int OSSL_CMP_CTX_set1_nonce_hint(OSSL_CMP_CTX *ctx, const char *hint)
+{
+    char *copy = NULL;
+
+    if (ctx == NULL) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
+        return 0;
+    }
+    if (hint != NULL && (copy = OPENSSL_strdup(hint)) == NULL)
+        return 0;
+    OPENSSL_free(ctx->nonce_hint);
+    ctx->nonce_hint = copy;
+    return 1;
+}
+
+/*
+ * Return the currently configured Verifier hint, or NULL if none was set.
+ * The returned pointer is owned by the CTX and must not be freed by the caller.
+ */
+const char *OSSL_CMP_CTX_get0_nonce_hint(const OSSL_CMP_CTX *ctx)
+{
+    if (ctx == NULL) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
+        return NULL;
+    }
+    return ctx->nonce_hint;
 }
 
 /* Set the proxy server to use for HTTP(S) connections */
