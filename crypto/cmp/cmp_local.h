@@ -18,8 +18,13 @@
 
 #define IS_NULL_DN(name) (X509_NAME_get_entry(name, 0) == NULL)
 
-/* Stack of ASN1_OCTET_STRING used to store multiple RATS nonces */
-DEFINE_STACK_OF(ASN1_OCTET_STRING)
+/*
+ * Stack of ASN1_OCTET_STRING (used to store multiple RATS nonces) is
+ * declared in the public header <openssl/cmp.h> via generate_stack_macros,
+ * so both library code (which includes <openssl/cmp.h> above) and external
+ * consumers of OSSL_CMP_CTX_get0_rats_nonces() get the sk_ASN1_OCTET_STRING_*
+ * helpers without re-declaring them.  No private declaration needed here.
+ */
 
 /*
  * this structure is used to store the context for CMP sessions
