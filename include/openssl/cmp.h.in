@@ -242,15 +242,14 @@ typedef struct ossl_cmp_crlstatus_st OSSL_CMP_CRLSTATUS;
 -}
 /* clang-format on */
 
+/*
+ * Nonce exchange per draft-ietf-lamps-attestation-freshness:
+ * NonceRequest  ::= SEQUENCE { len, type, reqInfo } (all OPTIONAL)
+ * NonceResponse ::= SEQUENCE { nonce, expiry, type, respInfo }
+ * Each ITAV carries a single NonceRequest / NonceResponse.
+ */
 typedef struct ossl_cmp_noncerequest_st OSSL_CMP_NONCEREQUEST;
-{-
-    generate_stack_macros("OSSL_CMP_NONCEREQUEST");
--}
-
 typedef struct ossl_cmp_nonceresponse_st OSSL_CMP_NONCERESPONSE;
-{-
-    generate_stack_macros("OSSL_CMP_NONCERESPONSE");
--}
 
 typedef OSSL_CRMF_ATTRIBUTETYPEANDVALUE OSSL_CMP_ATAV;
 #define OSSL_CMP_ATAV_free OSSL_CRMF_ATTRIBUTETYPEANDVALUE_free
@@ -351,11 +350,26 @@ OSSL_CMP_ATAV *OSSL_CMP_ATAV_new_rsaKeyLen(int len);
 int OSSL_CMP_ATAV_get_rsaKeyLen(const OSSL_CMP_ATAV *atav);
 int OSSL_CMP_ATAV_push1(OSSL_CMP_ATAVS **sk_p, const OSSL_CMP_ATAV *atav);
 OSSL_CMP_ITAV *OSSL_CMP_ITAV_new_ratsnonce(const unsigned char *nonce, int len);
-/* Build id-it-nonceRequest ITAV (placeholder OID: NID_id_smime_aa_nonce). */
-OSSL_CMP_ITAV *OSSL_CMP_ITAV_new0_nonceRequest(int len, ASN1_OBJECT *type,
-                                                const char *hint);
-/* Build a multi-entry nonceRequest ITAV with 'count' NonceRequest entries. */
-OSSL_CMP_ITAV *OSSL_CMP_ITAV_new0_nonceRequestSeq(int len, int count);
+/*
+ * Build an id-it-nonceRequest ITAV carrying a single NonceRequest
+ * (placeholder OID: NID_id_smime_aa_nonce).  Pass len 0 to omit the length
+ * (RA/CA chooses) and type NULL to omit the type.  Ownership of *type* is
+ * transferred on success.
+ */
+OSSL_CMP_ITAV *OSSL_CMP_ITAV_new0_nonceRequest(int len, ASN1_OBJECT *type);
+/*
+ * Set NonceRequest.type = OID(*type_oid_dot*) and NonceRequest.reqInfo from
+ * the DER bytes in *info_der*.  The fields are set together because the
+ * draft requires reqInfo to be omitted when type is absent.
+ * TPM platform usage: pass TPM_PCR_SELECTION_OID and the DER of
+ * TpmAttestationParams{hashAlgId} (the hash-bank proposal).
+ * *info_der* is copied; caller retains ownership.
+ * Returns 1 on success, 0 on error.
+ */
+int OSSL_CMP_NONCEREQUEST_set1_info(OSSL_CMP_NONCEREQUEST *req,
+                                    const char *type_oid_dot,
+                                    const unsigned char *info_der,
+                                    int info_der_len);
 
 void OSSL_CMP_MSG_free(OSSL_CMP_MSG *msg);
 
@@ -392,7 +406,6 @@ const char *OSSL_CMP_CTX_get0_propq(const OSSL_CMP_CTX *ctx);
 #define OSSL_CMP_OPT_IGNORE_KEYUSAGE 35
 #define OSSL_CMP_OPT_PERMIT_TA_IN_EXTRACERTS_FOR_IR 36
 #define OSSL_CMP_OPT_NO_CACHE_EXTRACERTS 37
-#define OSSL_CMP_OPT_NONCE_SEQ_SIZE 38 /* RATS: number of NonceRequest entries in genm sequence (0 = default 1) */
 int OSSL_CMP_CTX_set_option(OSSL_CMP_CTX *ctx, int opt, int val);
 int OSSL_CMP_CTX_get_option(const OSSL_CMP_CTX *ctx, int opt);
 /* CMP-specific callback for logging and outputting the error queue: */
@@ -400,22 +413,26 @@ int OSSL_CMP_CTX_set_log_cb(OSSL_CMP_CTX *ctx, OSSL_CMP_log_cb_t cb);
 #define OSSL_CMP_CTX_set_log_verbosity(ctx, level) \
     OSSL_CMP_CTX_set_option(ctx, OSSL_CMP_OPT_LOG_VERBOSITY, level)
 void OSSL_CMP_CTX_print_errors(const OSSL_CMP_CTX *ctx);
-ASN1_OCTET_STRING *OSSL_CMP_CTX_get0_rats_nonce(const OSSL_CMP_CTX *ctx);
-/* clang-format off */
-{-
-    # The plural getter returns a stack; expose the type-safe sk_T_* helpers
-    # alongside it so consumers can iterate without re-declaring the type
-    # locally.  No other public header generates these macros for
-    # ASN1_OCTET_STRING, so there is no risk of duplicate definition.
-    generate_stack_macros("ASN1_OCTET_STRING");
--}
-/* clang-format on */
-STACK_OF(ASN1_OCTET_STRING) *OSSL_CMP_CTX_get0_rats_nonces(const OSSL_CMP_CTX *ctx);
-/* RATS Verifier hint (NonceRequest.hint UTF8String OPTIONAL) — FQDN/URI that
- * tells the CMP server which Verifier to route the nonce request to.  Pass
- * NULL to clear.  Servers that do not support hint-based routing ignore it. */
-int OSSL_CMP_CTX_set1_nonce_hint(OSSL_CMP_CTX *ctx, const char *hint);
-const char *OSSL_CMP_CTX_get0_nonce_hint(const OSSL_CMP_CTX *ctx);
+/*
+ * RATS nonce-exchange results, filled in by the genm/genp nonce exchange.
+ * get0_rats_nonce returns the received nonce (zero-length = the RA/CA does
+ * not require a freshness proof); expiry/resp_type/resp_info return the
+ * optional NonceResponse fields or NULL when absent.  All returned values
+ * are owned by the CTX — do NOT free them.
+ */
+const ASN1_OCTET_STRING *OSSL_CMP_CTX_get0_rats_nonce(const OSSL_CMP_CTX *ctx);
+const ASN1_INTEGER *OSSL_CMP_CTX_get0_rats_nonce_expiry(const OSSL_CMP_CTX *ctx);
+const ASN1_OBJECT *OSSL_CMP_CTX_get0_rats_resp_type(const OSSL_CMP_CTX *ctx);
+const ASN1_TYPE *OSSL_CMP_CTX_get0_rats_resp_info(const OSSL_CMP_CTX *ctx);
+/*
+ * Propose a TPM hash algorithm for the platform-quote nonce request.
+ * When *alg_id* is non-zero, ossl_cmp_get_nonce() sends
+ * reqInfo = DER(TpmAttestationParams{hashAlgId = alg_id}) under
+ * type = TPM_PCR_SELECTION_OID.  The RA/CA either echoes this value (accept)
+ * or substitutes its preferred algorithm (counter-propose) in
+ * NonceResponse.respInfo.  Pass 0 to omit the proposal.
+ */
+int OSSL_CMP_CTX_set_tpm_hash_alg_proposal(OSSL_CMP_CTX *ctx, unsigned int alg_id);
 /* message transfer: */
 int OSSL_CMP_CTX_set1_serverPath(OSSL_CMP_CTX *ctx, const char *path);
 int OSSL_CMP_CTX_set1_server(OSSL_CMP_CTX *ctx, const char *address);

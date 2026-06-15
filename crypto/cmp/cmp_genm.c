@@ -456,45 +456,57 @@ end:
 }
 
 /*
- * Extract all nonces from the NonceResponseValue in the genp ITAV and append
- * each one to ctx->rats_nonces for subsequent use in attestation evidence.
+ * Store the single NonceResponse carried in the genp ITAV into the CTX.
  * The ITAV infoType must be NID_id_smime_aa_nonceResponse (placeholder for
  * id-it-nonceResponse, TBD2).
  *
- * Per the draft: an empty OCTET STRING signals the RA/CA could not provide
- * a nonce for that slot — it is silently skipped, not treated as an error.
- * The order of stored nonces matches the order of NonceRequest entries sent.
+ * Draft rules enforced here:
+ * - the ITAV value is exactly one NonceResponse;
+ * - respInfo present requires type present;
+ * - the response type, when present, must equal the request type
+ *   (*expected_type*; may be NULL when the request carried no type);
+ * - a zero-length nonce is stored as-is: it means the RA/CA does not
+ *   require a freshness proof — the application decides how to proceed.
  */
 static int set_remote_attestation_Nonce(OSSL_CMP_CTX *ctx,
-                                        OSSL_CMP_ITAV *nonce_itav)
+                                        OSSL_CMP_ITAV *nonce_itav,
+                                        const ASN1_OBJECT *expected_type)
 {
-    STACK_OF(OSSL_CMP_NONCERESPONSE) *resps;
-    int i, n, ret = 0;
+    OSSL_CMP_NONCERESPONSE *resp;
+    int ret = 0;
 
-    if (ctx == NULL || nonce_itav == NULL)
+    if (ctx == NULL || nonce_itav == NULL) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
         goto err;
+    }
 
     if (NID_id_smime_aa_nonceResponse !=
-        OBJ_obj2nid(OSSL_CMP_ITAV_get0_type(nonce_itav)))
+        OBJ_obj2nid(OSSL_CMP_ITAV_get0_type(nonce_itav))) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_ARGS);
         goto err;
-
-    resps = nonce_itav->infoValue.nonceResponseValue;
-    if (resps == NULL || (n = sk_OSSL_CMP_NONCERESPONSE_num(resps)) < 1)
-        goto err;
-
-    for (i = 0; i < n; i++) {
-        OSSL_CMP_NONCERESPONSE *resp = sk_OSSL_CMP_NONCERESPONSE_value(resps, i);
-
-        if (resp == NULL || resp->nonce == NULL)
-            goto err;
-
-        /* Empty nonce: RA/CA could not provide one for this slot — skip it. */
-        if (ASN1_STRING_length(resp->nonce) == 0)
-            continue;
-
-        if (!ossl_cmp_ctx_push1_rats_nonce(ctx, resp->nonce))
-            goto err;
     }
+
+    resp = nonce_itav->infoValue.nonceResponseValue;
+    if (resp == NULL || resp->nonce == NULL) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_ARGS);
+        goto err;
+    }
+
+    /* per the draft, respInfo MUST be omitted when type is absent */
+    if (resp->type == NULL && resp->respInfo != NULL) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_ARGS);
+        goto err;
+    }
+
+    /* the type in the nonce response is defined by the type in the request */
+    if (resp->type != NULL && expected_type != NULL
+            && OBJ_cmp(resp->type, expected_type) != 0) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_ARGS);
+        goto err;
+    }
+
+    if (!ossl_cmp_ctx_set1_rats_response(ctx, resp))
+        goto err;
 
     ret = 1;
  err:
@@ -502,64 +514,137 @@ static int set_remote_attestation_Nonce(OSSL_CMP_CTX *ctx,
     return ret;
 }
 
+/*
+ * build_tpm_hash_proposal_der - encode TpmAttestationParams{hashAlgId=alg_id}
+ *
+ * Produces the DER for SEQUENCE { INTEGER alg_id } — the pcrs field is absent
+ * (attester proposal shape).  Caller must OPENSSL_free(*out).
+ * Returns total byte count on success, 0 on error.
+ *
+ * Handles alg_id values 0..0x7F (single-byte INTEGER value field).  All
+ * realistic TPM algorithm IDs (SHA-256=11, SHA-384=12, SHA-512=13) fit.
+ */
+static int build_tpm_hash_proposal_der(unsigned int alg_id, unsigned char **out)
+{
+    ASN1_INTEGER *ai;
+    int body_len, total_len;
+    unsigned char *der, *p;
+
+    if (out == NULL || alg_id == 0 || alg_id > 0x7F)
+        return 0;
+
+    ai = ASN1_INTEGER_new();
+    if (ai == NULL)
+        return 0;
+    if (!ASN1_INTEGER_set(ai, (long)alg_id)) {
+        ASN1_INTEGER_free(ai);
+        return 0;
+    }
+
+    body_len = i2d_ASN1_INTEGER(ai, NULL);
+    if (body_len <= 0 || body_len >= 128) {
+        ASN1_INTEGER_free(ai);
+        return 0;
+    }
+
+    total_len = 2 + body_len; /* SEQUENCE tag + 1-byte length + body */
+    der = OPENSSL_malloc(total_len);
+    if (der == NULL) {
+        ASN1_INTEGER_free(ai);
+        return 0;
+    }
+
+    p = der;
+    *p++ = 0x30;                    /* SEQUENCE tag */
+    *p++ = (unsigned char)body_len; /* length (< 128, single byte) */
+    i2d_ASN1_INTEGER(ai, &p);
+    ASN1_INTEGER_free(ai);
+    *out = der;
+    return total_len;
+}
+
 int ossl_cmp_get_nonce(OSSL_CMP_CTX *ctx)
 {
     OSSL_CMP_ITAV *req, *itav;
-    int len, seq_size;
+    ASN1_OBJECT *req_type, *expected_type = NULL;
+    const char *pcr_sel_oid;
+    int len, ret = 0;
 
     if (ctx == NULL) {
         ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
         return 0;
     }
 
-    len      = ctx->nonce_req_length;           /* 0 = let RA/CA choose */
-    seq_size = ctx->nonce_seq_size > 0 ? ctx->nonce_seq_size : 1;
+    len = ctx->nonce_req_length; /* 0 = let RA/CA choose */
 
-    /*
-     * Build a NonceRequestValue ITAV under the placeholder OID for
-     * id-it-nonceRequest (TBD1) with seq_size entries, each requesting
-     * a nonce of 'len' bytes.  type is omitted; hint is applied below if set.
-     */
-    if ((req = OSSL_CMP_ITAV_new0_nonceRequestSeq(len, seq_size)) == NULL)
+    /* ossl_safe_getenv: suppress environment influence in setuid processes */
+    pcr_sel_oid = ossl_safe_getenv("TPM_PCR_SELECTION_OID");
+    if (pcr_sel_oid == NULL || pcr_sel_oid[0] == '\0')
+        pcr_sel_oid = "1.3.6.1.4.1.99999.3";
+
+    if ((req_type = OBJ_txt2obj(pcr_sel_oid, 1)) == NULL) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_ARGS);
         return 0;
-
-    /*
-     * If a Verifier hint is configured on the CTX, apply it to every
-     * NonceRequest entry in the sequence so the CMP server knows which
-     * Verifier to route this nonce request to.  Servers that don't support
-     * hint-based routing ignore the field.
-     */
-    if (ctx->nonce_hint != NULL) {
-        STACK_OF(OSSL_CMP_NONCEREQUEST) *sk = req->infoValue.nonceRequestValue;
-        int i, n = sk_OSSL_CMP_NONCEREQUEST_num(sk);
-
-        for (i = 0; i < n; i++) {
-            OSSL_CMP_NONCEREQUEST *entry = sk_OSSL_CMP_NONCEREQUEST_value(sk, i);
-            ASN1_UTF8STRING *hint;
-
-            if (entry == NULL)
-                continue;
-            if ((hint = ASN1_UTF8STRING_new()) == NULL
-                    || !ASN1_STRING_set(hint, ctx->nonce_hint, -1)) {
-                ASN1_UTF8STRING_free(hint);
-                OSSL_CMP_ITAV_free(req);
-                return 0;
-            }
-            ASN1_UTF8STRING_free(entry->hint);
-            entry->hint = hint;
-        }
     }
 
     /*
-     * The genp carries the NonceResponseValue under the placeholder OID for
+     * Build the NonceRequest ITAV under the placeholder OID for
+     * id-it-nonceRequest (TBD1).  The ITAV value is a single NonceRequest
+     * per the freshness draft; type identifies the TPM platform-quote
+     * profile (TPM_PCR_SELECTION_OID).
+     */
+    if ((req = OSSL_CMP_ITAV_new0_nonceRequest(len, req_type)) == NULL) {
+        ASN1_OBJECT_free(req_type);
+        return 0;
+    }
+    req_type = NULL; /* ownership transferred to req */
+
+    /*
+     * TPM hash-bank proposal: when tpm_hash_alg_proposal is non-zero, send
+     * reqInfo = DER(TpmAttestationParams{hashAlgId=tpm_hash_alg_proposal})
+     * so the RA/CA can echo or counter-propose PCR selection in respInfo.
+     */
+    if (ctx->tpm_hash_alg_proposal != 0) {
+        OSSL_CMP_NONCEREQUEST *entry = req->infoValue.nonceRequestValue;
+        unsigned char *tap_der = NULL;
+        int tap_len, ok;
+
+        tap_len = build_tpm_hash_proposal_der(ctx->tpm_hash_alg_proposal,
+                                              &tap_der);
+        if (tap_len <= 0 || entry == NULL) {
+            ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_ARGS);
+            OSSL_CMP_ITAV_free(req);
+            return 0;
+        }
+        ok = OSSL_CMP_NONCEREQUEST_set1_info(entry, pcr_sel_oid,
+                                             tap_der, tap_len);
+        OPENSSL_free(tap_der);
+        if (!ok) {
+            OSSL_CMP_ITAV_free(req);
+            return 0;
+        }
+    }
+
+    /* keep a copy of the request type for validating the response type */
+    if ((expected_type = OBJ_txt2obj(pcr_sel_oid, 1)) == NULL) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_ARGS);
+        OSSL_CMP_ITAV_free(req);
+        return 0;
+    }
+
+    /*
+     * The genp carries a single NonceResponse under the placeholder OID for
      * id-it-nonceResponse (TBD2).
      */
     if ((itav = get_genm_itav(ctx, req, NID_id_smime_aa_nonceResponse,
                               "nonceResponse")) == NULL)
-        return 0;
+        goto end;
 
-    if (!set_remote_attestation_Nonce(ctx, itav))
-        return 0;
+    if (!set_remote_attestation_Nonce(ctx, itav, expected_type))
+        goto end;
 
-    return 1;
+    ret = 1;
+ end:
+    ASN1_OBJECT_free(expected_type);
+    return ret;
 }

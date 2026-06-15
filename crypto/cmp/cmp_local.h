@@ -19,14 +19,6 @@
 #define IS_NULL_DN(name) (X509_NAME_get_entry(name, 0) == NULL)
 
 /*
- * Stack of ASN1_OCTET_STRING (used to store multiple RATS nonces) is
- * declared in the public header <openssl/cmp.h> via generate_stack_macros,
- * so both library code (which includes <openssl/cmp.h> above) and external
- * consumers of OSSL_CMP_CTX_get0_rats_nonces() get the sk_ASN1_OCTET_STRING_*
- * helpers without re-declaring them.  No private declaration needed here.
- */
-
-/*
  * this structure is used to store the context for CMP sessions
  */
 struct ossl_cmp_ctx_st {
@@ -120,10 +112,21 @@ struct ossl_cmp_ctx_st {
     X509_REQ *p10CSR; /* for P10CR: PKCS#10 CSR to be sent */
     int rats_status; /* Remote attestation procedures (RATS) status */
     int nonce_req_length; /* requested nonce length in bytes (0 = server chooses) */
-    int nonce_seq_size;   /* number of NonceRequest entries in genm sequence (0 = default 1) */
-    STACK_OF(ASN1_OCTET_STRING) *rats_nonces; /* all RATS nonces received from RA/CA */
-    char *nonce_hint; /* FQDN/URI of the Verifier to be used for nonce issuance
-                       * (NonceRequest.hint UTF8String OPTIONAL); NULL = omit */
+    /*
+     * Single RATS nonce exchange state per draft-ietf-lamps-attestation-
+     * freshness (PR #26 shape): the genm carries one NonceRequest, the genp
+     * one NonceResponse.  A zero-length rats_nonce means the RA/CA requires
+     * no freshness proof for the upcoming certificate request.
+     */
+    ASN1_OCTET_STRING *rats_nonce;        /* nonce received from RA/CA */
+    ASN1_INTEGER      *rats_nonce_expiry; /* validity in seconds; NULL = none */
+    ASN1_OBJECT       *rats_resp_type;    /* NonceResponse.type; NULL = none */
+    ASN1_TYPE         *rats_resp_info;    /* NonceResponse.respInfo; NULL = none */
+    /* TPM hash algorithm proposal for the platform-quote NonceRequest.
+     * When non-zero, ossl_cmp_get_nonce() sends
+     * reqInfo = DER(TpmAttestationParams{hashAlgId=tpm_hash_alg_proposal})
+     * so the RA/CA can echo or counter-propose.  0 = omit reqInfo. */
+    unsigned int tpm_hash_alg_proposal;
 
     /* misc body contents */
     int revocationReason; /* revocation reason code to be included in RR */
@@ -251,35 +254,50 @@ DECLARE_ASN1_FUNCTIONS(OSSL_CMP_CRLSTATUS)
 
 /*-
  * NonceRequest ::= SEQUENCE {
- *     len   INTEGER    OPTIONAL,  -- required nonce length in bytes
- *     type  OID        OPTIONAL,  -- evidence statement type OID
- *     hint  UTF8String OPTIONAL   -- FQDN/URI identifying the Verifier
+ *     len      INTEGER (8..64)    OPTIONAL, -- required nonce length in bytes
+ *     type     OBJECT IDENTIFIER  OPTIONAL, -- nonce-request syntax OID
+ *     reqInfo  ANY                OPTIONAL  -- type-specific request info
  * }
- * Used as value of id-it-nonceRequest (genm direction).
+ * Used as value of id-it-nonceRequest (genm direction), one NonceRequest per
+ * ITAV as defined by draft-ietf-lamps-attestation-freshness (PR #26 shape).
  * Placeholder OID: NID_id_smime_aa_nonce until IANA assigns id-it TBD1.
+ *
+ * For the TPM platform profile, ``type`` is the configured
+ * TPM_PCR_SELECTION_OID and ``reqInfo`` carries the DER of a
+ * TpmAttestationParams{hashAlgId} hash-bank proposal.  Per the draft,
+ * ``reqInfo`` MUST be omitted when ``type`` is absent.
  */
 struct ossl_cmp_noncerequest_st {
-    ASN1_INTEGER    *len;
-    ASN1_OBJECT     *type;
-    ASN1_UTF8STRING *hint;
+    ASN1_INTEGER *len;
+    ASN1_OBJECT  *type;
+    ASN1_TYPE    *reqInfo; /* OPTIONAL */
 }; /* OSSL_CMP_NONCEREQUEST */
 DECLARE_ASN1_FUNCTIONS(OSSL_CMP_NONCEREQUEST)
 
 /*-
  * NonceResponse ::= SEQUENCE {
- *     nonce  OCTET STRING,        -- the nonce value (min. 64-bit entropy)
- *     expiry INTEGER    OPTIONAL, -- validity in seconds
- *     type   OID        OPTIONAL, -- echoes request type if present
- *     hint   UTF8String OPTIONAL  -- echoes request hint if present
+ *     nonce    OCTET STRING (SIZE(0 | 8..64)),
+ *     expiry   INTEGER            OPTIONAL, -- validity in seconds
+ *     type     OBJECT IDENTIFIER  OPTIONAL, -- nonce-response syntax OID
+ *     respInfo ANY                OPTIONAL  -- type-specific response info
  * }
- * Used as value of id-it-nonceResponse (genp direction).
+ * Used as value of id-it-nonceResponse (genp direction), one NonceResponse
+ * per ITAV.  A zero-length nonce means the RA/CA does not require a
+ * freshness proof for the upcoming certificate request (unable/unwilling is
+ * signalled as a CMP error instead).
  * Placeholder OID: NID_id_smime_aa_nonceResponse until IANA assigns id-it TBD2.
+ *
+ * For the TPM platform profile, ``respInfo`` carries the DER of a
+ * TpmAttestationParams — the RA/CA-selected PCR list plus the negotiated TPM
+ * hash algorithm ID (e.g. 0x000B for SHA-256) the attester must quote.
+ * Per the draft, ``respInfo`` MUST be omitted when ``type`` is absent and the
+ * response ``type`` is defined by the request ``type``.
  */
 struct ossl_cmp_nonceresponse_st {
     ASN1_OCTET_STRING *nonce;
     ASN1_INTEGER      *expiry;
     ASN1_OBJECT       *type;
-    ASN1_UTF8STRING   *hint;
+    ASN1_TYPE         *respInfo; /* OPTIONAL */
 }; /* OSSL_CMP_NONCERESPONSE */
 DECLARE_ASN1_FUNCTIONS(OSSL_CMP_NONCERESPONSE)
 
@@ -343,15 +361,17 @@ struct ossl_cmp_itav_st {
         /* NID_id_it_crls - Certificate Status Lists */
         STACK_OF(X509_CRL) *crls;
         /*
-         * Placeholder for id-it-nonceRequest (TBD1): one entry per evidence type.
+         * Placeholder for id-it-nonceRequest (TBD1): a single NonceRequest
+         * per ITAV as defined by draft-ietf-lamps-attestation-freshness.
          * Uses NID_id_smime_aa_nonce until IANA assigns the final id-it arc number.
          */
-        STACK_OF(OSSL_CMP_NONCEREQUEST) *nonceRequestValue;
+        OSSL_CMP_NONCEREQUEST *nonceRequestValue;
         /*
-         * Placeholder for id-it-nonceResponse (TBD2): one entry per evidence type.
+         * Placeholder for id-it-nonceResponse (TBD2): a single NonceResponse
+         * per ITAV.
          * Uses NID_id_smime_aa_nonceResponse until IANA assigns the final id-it arc number.
          */
-        STACK_OF(OSSL_CMP_NONCERESPONSE) *nonceResponseValue;
+        OSSL_CMP_NONCERESPONSE *nonceResponseValue;
 
         /* this is to be used for so far undeclared objects */
         ASN1_TYPE *other;
@@ -927,7 +947,8 @@ int ossl_cmp_ctx_set1_recipNonce(OSSL_CMP_CTX *ctx,
 EVP_PKEY *ossl_cmp_ctx_get0_newPubkey(const OSSL_CMP_CTX *ctx);
 int ossl_cmp_ctx_set1_first_senderNonce(OSSL_CMP_CTX *ctx,
     const ASN1_OCTET_STRING *nonce);
-int ossl_cmp_ctx_push1_rats_nonce(OSSL_CMP_CTX *ctx, const ASN1_OCTET_STRING *nonce);
+int ossl_cmp_ctx_set1_rats_response(OSSL_CMP_CTX *ctx,
+                                    const OSSL_CMP_NONCERESPONSE *resp);
 int ossl_cmp_get_nonce(OSSL_CMP_CTX *ctx);
 
 /* from cmp_status.c */

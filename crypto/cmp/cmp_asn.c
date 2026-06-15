@@ -128,17 +128,19 @@ ASN1_ADB(OSSL_CMP_ITAV) = {
         ASN1_SEQUENCE_OF_OPT(OSSL_CMP_ITAV, infoValue.crls, X509_CRL)),
     /*
      * Placeholder for id-it-nonceRequest (TBD1) per draft-ietf-lamps-attestation-freshness.
+     * The ITAV value is a single NonceRequest (GenMsg: {id-it TBD1}, NonceRequest).
      * Replace NID_id_smime_aa_nonce with NID_id_it_nonceRequest once IANA assigns id-it TBD1.
      */
     ADB_ENTRY(NID_id_smime_aa_nonce,
-        ASN1_SEQUENCE_OF_OPT(OSSL_CMP_ITAV, infoValue.nonceRequestValue,
+        ASN1_OPT(OSSL_CMP_ITAV, infoValue.nonceRequestValue,
             OSSL_CMP_NONCEREQUEST)),
     /*
      * Placeholder for id-it-nonceResponse (TBD2) per draft-ietf-lamps-attestation-freshness.
+     * The ITAV value is a single NonceResponse (GenRep: {id-it TBD2}, NonceResponse).
      * Replace NID_id_smime_aa_nonceResponse with NID_id_it_nonceResponse once IANA assigns id-it TBD2.
      */
     ADB_ENTRY(NID_id_smime_aa_nonceResponse,
-        ASN1_SEQUENCE_OF_OPT(OSSL_CMP_ITAV, infoValue.nonceResponseValue,
+        ASN1_OPT(OSSL_CMP_ITAV, infoValue.nonceResponseValue,
             OSSL_CMP_NONCERESPONSE))
 } ASN1_ADB_END(OSSL_CMP_ITAV, 0, infoType, 0, &infotypeandvalue_default_tt, NULL);
 
@@ -150,17 +152,17 @@ IMPLEMENT_ASN1_FUNCTIONS(OSSL_CMP_ITAV)
 IMPLEMENT_ASN1_DUP_FUNCTION(OSSL_CMP_ITAV)
 
 ASN1_SEQUENCE(OSSL_CMP_NONCEREQUEST) = {
-    ASN1_OPT(OSSL_CMP_NONCEREQUEST, len,  ASN1_INTEGER),
-    ASN1_OPT(OSSL_CMP_NONCEREQUEST, type, ASN1_OBJECT),
-    ASN1_OPT(OSSL_CMP_NONCEREQUEST, hint, ASN1_UTF8STRING)
+    ASN1_OPT(OSSL_CMP_NONCEREQUEST, len,     ASN1_INTEGER),
+    ASN1_OPT(OSSL_CMP_NONCEREQUEST, type,    ASN1_OBJECT),
+    ASN1_OPT(OSSL_CMP_NONCEREQUEST, reqInfo, ASN1_ANY)
 } ASN1_SEQUENCE_END(OSSL_CMP_NONCEREQUEST)
 IMPLEMENT_ASN1_FUNCTIONS(OSSL_CMP_NONCEREQUEST)
 
 ASN1_SEQUENCE(OSSL_CMP_NONCERESPONSE) = {
-    ASN1_SIMPLE(OSSL_CMP_NONCERESPONSE, nonce,  ASN1_OCTET_STRING),
-    ASN1_OPT(OSSL_CMP_NONCERESPONSE,   expiry, ASN1_INTEGER),
-    ASN1_OPT(OSSL_CMP_NONCERESPONSE,   type,   ASN1_OBJECT),
-    ASN1_OPT(OSSL_CMP_NONCERESPONSE,   hint,   ASN1_UTF8STRING)
+    ASN1_SIMPLE(OSSL_CMP_NONCERESPONSE, nonce,    ASN1_OCTET_STRING),
+    ASN1_OPT(OSSL_CMP_NONCERESPONSE,    expiry,   ASN1_INTEGER),
+    ASN1_OPT(OSSL_CMP_NONCERESPONSE,    type,     ASN1_OBJECT),
+    ASN1_OPT(OSSL_CMP_NONCERESPONSE,    respInfo, ASN1_ANY)
 } ASN1_SEQUENCE_END(OSSL_CMP_NONCERESPONSE)
 IMPLEMENT_ASN1_FUNCTIONS(OSSL_CMP_NONCERESPONSE)
 
@@ -642,17 +644,16 @@ int OSSL_CMP_ITAV_get0_crlStatusList(const OSSL_CMP_ITAV *itav,
 }
 
 /*
- * Build a NonceRequest ITAV for use in genm.
- * All parameters are optional per the draft; pass NULL/0 to omit a field.
+ * Build a NonceRequest ITAV for use in genm.  The ITAV value is a single
+ * NonceRequest per draft-ietf-lamps-attestation-freshness.
+ * All fields are optional per the draft; pass NULL/0 to omit a field.
+ * Ownership of *type* is transferred on success.
  * Uses NID_id_smime_aa_nonce as placeholder for id-it-nonceRequest (TBD1).
  */
-OSSL_CMP_ITAV *OSSL_CMP_ITAV_new0_nonceRequest(int len,
-                                                ASN1_OBJECT *type,
-                                                const char *hint)
+OSSL_CMP_ITAV *OSSL_CMP_ITAV_new0_nonceRequest(int len, ASN1_OBJECT *type)
 {
     OSSL_CMP_ITAV *itav = NULL;
     OSSL_CMP_NONCEREQUEST *req = NULL;
-    STACK_OF(OSSL_CMP_NONCEREQUEST) *sk = NULL;
 
     if ((req = OSSL_CMP_NONCEREQUEST_new()) == NULL)
         goto err;
@@ -666,76 +667,72 @@ OSSL_CMP_ITAV *OSSL_CMP_ITAV_new0_nonceRequest(int len,
         ASN1_OBJECT_free(req->type);
         req->type = type;
     }
-    if (hint != NULL) {
-        if ((req->hint = ASN1_UTF8STRING_new()) == NULL)
-            goto err;
-        if (!ASN1_STRING_set(req->hint, hint, -1))
-            goto err;
-    }
-    if ((sk = sk_OSSL_CMP_NONCEREQUEST_new_null()) == NULL)
-        goto err;
-    if (!sk_OSSL_CMP_NONCEREQUEST_push(sk, req))
-        goto err;
-    req = NULL;
 
     if ((itav = OSSL_CMP_ITAV_new()) == NULL)
         goto err;
     itav->infoType = OBJ_nid2obj(NID_id_smime_aa_nonce);
-    itav->infoValue.nonceRequestValue = sk;
+    itav->infoValue.nonceRequestValue = req;
     return itav;
 
  err:
+    /* Ownership of *type* transfers only on success: detach it before freeing
+     * req so the caller's ASN1_OBJECT_free(type) on failure is never a double
+     * free (we may already have done req->type = type above). */
+    if (req != NULL && req->type == type)
+        req->type = NULL;
     OSSL_CMP_NONCEREQUEST_free(req);
-    sk_OSSL_CMP_NONCEREQUEST_pop_free(sk, OSSL_CMP_NONCEREQUEST_free);
     OSSL_CMP_ITAV_free(itav);
     return NULL;
 }
 
 /*
- * Build a NonceRequest ITAV whose NonceRequestValue contains 'count' entries,
- * each requesting a nonce of 'len' bytes (0 = let RA/CA choose length).
- * type and hint are omitted from every entry; pass count <= 1 for a single
- * entry (equivalent to OSSL_CMP_ITAV_new0_nonceRequest(len, NULL, NULL)).
- * Uses NID_id_smime_aa_nonce as placeholder for id-it-nonceRequest (TBD1).
+ * Set NonceRequest.type and NonceRequest.reqInfo together.
+ *
+ * Sets ``req->type = OBJ_txt2obj(*type_oid_dot*)`` and
+ * ``req->reqInfo = d2i_ASN1_TYPE(*info_der*, *info_der_len*)``.
+ * The two fields are set together because the draft requires reqInfo to be
+ * omitted whenever type is absent.
+ *
+ * TPM platform usage: pass the configured TPM_PCR_SELECTION_OID as
+ * *type_oid_dot* and the DER of TpmAttestationParams{hashAlgId} as
+ * *info_der* (the hash-bank proposal).
+ *
+ * *info_der* is copied internally; the caller retains ownership.
+ *
+ * Returns 1 on success, 0 on error (*req* may have type set but no reqInfo
+ * if decoding *info_der* fails).
  */
-OSSL_CMP_ITAV *OSSL_CMP_ITAV_new0_nonceRequestSeq(int len, int count)
+int OSSL_CMP_NONCEREQUEST_set1_info(OSSL_CMP_NONCEREQUEST *req,
+                                    const char *type_oid_dot,
+                                    const unsigned char *info_der,
+                                    int info_der_len)
 {
-    OSSL_CMP_ITAV *itav;
-    int i;
+    ASN1_OBJECT *oid = NULL;
+    const unsigned char *p = info_der;
 
-    if (count <= 0)
-        count = 1;
-
-    if ((itav = OSSL_CMP_ITAV_new0_nonceRequest(len, NULL, NULL)) == NULL)
-        return NULL;
-
-    for (i = 1; i < count; i++) {
-        OSSL_CMP_NONCEREQUEST *entry = OSSL_CMP_NONCEREQUEST_new();
-
-        if (entry == NULL) {
-            OSSL_CMP_ITAV_free(itav);
-            return NULL;
-        }
-        if (len > 0) {
-            if ((entry->len = ASN1_INTEGER_new()) == NULL
-                    || !ASN1_INTEGER_set(entry->len, len)) {
-                OSSL_CMP_NONCEREQUEST_free(entry);
-                OSSL_CMP_ITAV_free(itav);
-                return NULL;
-            }
-        }
-        if (!sk_OSSL_CMP_NONCEREQUEST_push(itav->infoValue.nonceRequestValue,
-                                           entry)) {
-            OSSL_CMP_NONCEREQUEST_free(entry);
-            OSSL_CMP_ITAV_free(itav);
-            return NULL;
-        }
+    if (req == NULL || type_oid_dot == NULL
+            || info_der == NULL || info_der_len <= 0) {
+        ERR_raise(ERR_LIB_CMP, ERR_R_PASSED_NULL_PARAMETER);
+        return 0;
     }
-    return itav;
+    if ((oid = OBJ_txt2obj(type_oid_dot, 1)) == NULL) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_ARGS);
+        return 0;
+    }
+    ASN1_OBJECT_free(req->type);
+    req->type = oid;
+
+    ASN1_TYPE_free(req->reqInfo);
+    if ((req->reqInfo = d2i_ASN1_TYPE(NULL, &p, info_der_len)) == NULL) {
+        ERR_raise(ERR_LIB_CMP, ERR_R_ASN1_LIB);
+        return 0;
+    }
+    return 1;
 }
 
 /*
- * Build a NonceResponse ITAV for use in genp.
+ * Build a NonceResponse ITAV for use in genp.  The ITAV value is a single
+ * NonceResponse per draft-ietf-lamps-attestation-freshness.
  * Uses NID_id_smime_aa_nonceResponse as placeholder for id-it-nonceResponse (TBD2).
  * Kept as OSSL_CMP_ITAV_new_ratsnonce() for backwards source compatibility;
  * the internal behaviour is updated to use the structured NonceResponse type.
@@ -744,9 +741,11 @@ OSSL_CMP_ITAV *OSSL_CMP_ITAV_new_ratsnonce(const unsigned char *nonce, int len)
 {
     OSSL_CMP_ITAV *itav = NULL;
     OSSL_CMP_NONCERESPONSE *resp = NULL;
-    STACK_OF(OSSL_CMP_NONCERESPONSE) *sk = NULL;
 
-    if (nonce == NULL || len <= 0)
+    /* len == 0 is valid: a zero-length nonce signals "no freshness proof
+     * required" (cmp_local.h NonceResponse SIZE(0 | 8..64)).  Only a NULL
+     * pointer or a negative length is rejected. */
+    if (nonce == NULL || len < 0)
         return NULL;
 
     if ((resp = OSSL_CMP_NONCERESPONSE_new()) == NULL)
@@ -754,21 +753,14 @@ OSSL_CMP_ITAV *OSSL_CMP_ITAV_new_ratsnonce(const unsigned char *nonce, int len)
     if (!ASN1_OCTET_STRING_set(resp->nonce, nonce, len))
         goto err;
 
-    if ((sk = sk_OSSL_CMP_NONCERESPONSE_new_null()) == NULL)
-        goto err;
-    if (!sk_OSSL_CMP_NONCERESPONSE_push(sk, resp))
-        goto err;
-    resp = NULL;
-
     if ((itav = OSSL_CMP_ITAV_new()) == NULL)
         goto err;
     itav->infoType = OBJ_nid2obj(NID_id_smime_aa_nonceResponse);
-    itav->infoValue.nonceResponseValue = sk;
+    itav->infoValue.nonceResponseValue = resp;
     return itav;
 
  err:
     OSSL_CMP_NONCERESPONSE_free(resp);
-    sk_OSSL_CMP_NONCERESPONSE_pop_free(sk, OSSL_CMP_NONCERESPONSE_free);
     OSSL_CMP_ITAV_free(itav);
     return NULL;
 }

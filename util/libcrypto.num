@@ -5706,13 +5706,14 @@ OSSL_ESS_check_signing_certs_ex         ?	4_0_0	EXIST::FUNCTION:
 
 OSSL_CMP_ITAV_new_ratsnonce             ?	4_0_0	EXIST::FUNCTION:CMP
 OSSL_CMP_ITAV_new0_nonceRequest         ?	4_0_0	EXIST::FUNCTION:CMP
-OSSL_CMP_ITAV_new0_nonceRequestSeq      ?	4_0_0	EXIST::FUNCTION:CMP
 OSSL_CMP_CTX_get0_rats_nonce            ?	4_0_0	EXIST::FUNCTION:CMP
-OSSL_CMP_CTX_get0_rats_nonces           ?	4_0_0	EXIST::FUNCTION:CMP
-OSSL_CMP_CTX_set1_nonce_hint            ?	4_0_0	EXIST::FUNCTION:CMP
-OSSL_CMP_CTX_get0_nonce_hint            ?	4_0_0	EXIST::FUNCTION:CMP
+OSSL_CMP_CTX_get0_rats_nonce_expiry     ?	4_0_0	EXIST::FUNCTION:CMP
+OSSL_CMP_CTX_get0_rats_resp_type        ?	4_0_0	EXIST::FUNCTION:CMP
+OSSL_CMP_CTX_get0_rats_resp_info        ?	4_0_0	EXIST::FUNCTION:CMP
 OSSL_CMP_CTX_get0_reqExtensions         ?	4_0_0	EXIST::FUNCTION:CMP
 OSSL_CMP_certreq_cb                     ?	4_0_0	EXIST::FUNCTION:CMP
 OSSL_CMP_CTX_set_certreq_cb             ?	4_0_0	EXIST::FUNCTION:CMP
 OSSL_CMP_CTX_set_certreq_cb_arg         ?	4_0_0	EXIST::FUNCTION:CMP
 OSSL_CMP_CTX_get_certreq_cb_arg         ?	4_0_0	EXIST::FUNCTION:CMP
+OSSL_CMP_CTX_set_tpm_hash_alg_proposal  ?	4_0_0	EXIST::FUNCTION:CMP
+OSSL_CMP_NONCEREQUEST_set1_info         ?	4_0_0	EXIST::FUNCTION:CMP
