@@ -441,45 +441,57 @@ int OSSL_CMP_get1_certReqTemplate(OSSL_CMP_CTX *ctx,
 }
 
 /*
- * Extract all nonces from the NonceResponseValue in the genp ITAV and append
- * each one to ctx->rats_nonces for subsequent use in attestation evidence.
+ * Store the single NonceResponse carried in the genp ITAV into the CTX.
  * The ITAV infoType must be NID_id_smime_aa_nonceResponse (placeholder for
  * id-it-nonceResponse, TBD2).
  *
- * Per the draft: an empty OCTET STRING signals the RA/CA could not provide
- * a nonce for that slot — it is silently skipped, not treated as an error.
- * The order of stored nonces matches the order of NonceRequest entries sent.
+ * Draft rules enforced here:
+ * - the ITAV value is exactly one NonceResponse;
+ * - respInfo present requires type present;
+ * - the response type, when present, must equal the request type
+ *   (*expected_type*; may be NULL when the request carried no type);
+ * - a zero-length nonce is stored as-is: it means the RA/CA does not
+ *   require a freshness proof — the application decides how to proceed.
  */
 static int set_remote_attestation_Nonce(OSSL_CMP_CTX *ctx,
-                                        OSSL_CMP_ITAV *nonce_itav)
+                                        OSSL_CMP_ITAV *nonce_itav,
+                                        const ASN1_OBJECT *expected_type)
 {
-    STACK_OF(OSSL_CMP_NONCERESPONSE) *resps;
-    int i, n, ret = 0;
+    OSSL_CMP_NONCERESPONSE *resp;
+    int ret = 0;
 
-    if (ctx == NULL || nonce_itav == NULL)
+    if (ctx == NULL || nonce_itav == NULL) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
         goto err;
+    }
 
     if (NID_id_smime_aa_nonceResponse !=
-        OBJ_obj2nid(OSSL_CMP_ITAV_get0_type(nonce_itav)))
+        OBJ_obj2nid(OSSL_CMP_ITAV_get0_type(nonce_itav))) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_ARGS);
         goto err;
-
-    resps = nonce_itav->infoValue.nonceResponseValue;
-    if (resps == NULL || (n = sk_OSSL_CMP_NONCERESPONSE_num(resps)) < 1)
-        goto err;
-
-    for (i = 0; i < n; i++) {
-        OSSL_CMP_NONCERESPONSE *resp = sk_OSSL_CMP_NONCERESPONSE_value(resps, i);
-
-        if (resp == NULL || resp->nonce == NULL)
-            goto err;
-
-        /* Empty nonce: RA/CA could not provide one for this slot — skip it. */
-        if (ASN1_STRING_length(resp->nonce) == 0)
-            continue;
-
-        if (!ossl_cmp_ctx_push1_rats_nonce(ctx, resp->nonce))
-            goto err;
     }
+
+    resp = nonce_itav->infoValue.nonceResponseValue;
+    if (resp == NULL || resp->nonce == NULL) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_ARGS);
+        goto err;
+    }
+
+    /* per the draft, respInfo MUST be omitted when type is absent */
+    if (resp->type == NULL && resp->respInfo != NULL) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_ARGS);
+        goto err;
+    }
+
+    /* the type in the nonce response is defined by the type in the request */
+    if (resp->type != NULL && expected_type != NULL
+            && OBJ_cmp(resp->type, expected_type) != 0) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_ARGS);
+        goto err;
+    }
+
+    if (!ossl_cmp_ctx_set1_rats_response(ctx, resp))
+        goto err;
 
     ret = 1;
  err:
@@ -490,38 +502,67 @@ static int set_remote_attestation_Nonce(OSSL_CMP_CTX *ctx,
 int ossl_cmp_get_nonce(OSSL_CMP_CTX *ctx)
 {
     OSSL_CMP_ITAV *req, *itav;
-    int len, seq_size;
+    ASN1_OBJECT *req_type = NULL;
+    int len;
 
     if (ctx == NULL) {
         ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
         return 0;
     }
 
-    len      = ctx->nonce_req_length;           /* 0 = let RA/CA choose */
-    seq_size = ctx->nonce_seq_size > 0 ? ctx->nonce_seq_size : 1;
+    len = ctx->nonce_req_length; /* 0 = let RA/CA choose */
 
     /*
-     * Build a NonceRequestValue ITAV under the placeholder OID for
-     * id-it-nonceRequest (TBD1).  When a verifier hint is configured,
-     * use the single-entry constructor so we can pass the hint through;
-     * otherwise fall back to the seq constructor (hint omitted).
+     * The request type and reqInfo are an opaque profile value the application
+     * configured via OSSL_CMP_CTX_set1_rats_reqInfo(); OpenSSL never interprets
+     * them.  Duplicate the type for the outgoing NonceRequest (ownership of the
+     * copy transfers into req on success).
      */
-    if (ctx->nonce_hint != NULL)
-        req = OSSL_CMP_ITAV_new0_nonceRequest(len, NULL, ctx->nonce_hint);
-    else
-        req = OSSL_CMP_ITAV_new0_nonceRequestSeq(len, seq_size);
-    if (req == NULL)
+    if (ctx->rats_req_type != NULL
+            && (req_type = OBJ_dup(ctx->rats_req_type)) == NULL) {
+        ERR_raise(ERR_LIB_CMP, ERR_R_ASN1_LIB);
         return 0;
+    }
 
     /*
-     * The genp carries the NonceResponseValue under the placeholder OID for
+     * Build the NonceRequest ITAV under the placeholder OID for
+     * id-it-nonceRequest (TBD1).  The ITAV value is a single NonceRequest
+     * per the freshness draft.
+     */
+    if ((req = OSSL_CMP_ITAV_new0_nonceRequest(len, req_type)) == NULL) {
+        ASN1_OBJECT_free(req_type);
+        return 0;
+    }
+    /* ownership of req_type transferred to req */
+
+    /*
+     * Attach the application-supplied opaque reqInfo, if any.  Its contents
+     * are a contract between ctx->rats_req_type and the profile code that
+     * built it (e.g. DER(TpmAttestationParams) for the TPM platform profile);
+     * OpenSSL just carries the bytes.
+     */
+    if (ctx->rats_req_info != NULL) {
+        OSSL_CMP_NONCEREQUEST *entry = req->infoValue.nonceRequestValue;
+
+        if (entry == NULL
+                || (entry->reqInfo = ASN1_item_dup(ASN1_ITEM_rptr(ASN1_ANY),
+                                                   ctx->rats_req_info)) == NULL) {
+            ERR_raise(ERR_LIB_CMP, ERR_R_ASN1_LIB);
+            OSSL_CMP_ITAV_free(req);
+            return 0;
+        }
+    }
+
+    /*
+     * The genp carries a single NonceResponse under the placeholder OID for
      * id-it-nonceResponse (TBD2).
      */
     if ((itav = get_genm_itav(ctx, req, NID_id_smime_aa_nonceResponse,
                               "nonceResponse")) == NULL)
         return 0;
 
-    if (!set_remote_attestation_Nonce(ctx, itav))
+    /* the response type, when present, must equal the request type */
+    if (!set_remote_attestation_Nonce(ctx, itav, ctx->rats_req_type))
         return 0;
 
     return 1;
