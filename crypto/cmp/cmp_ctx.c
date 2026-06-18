@@ -177,8 +177,18 @@ int OSSL_CMP_CTX_reinit(OSSL_CMP_CTX *ctx)
     OSSL_CMP_ITAVs_free(ctx->genm_ITAVs);
     ctx->genm_ITAVs = NULL;
 
-    sk_ASN1_OCTET_STRING_pop_free(ctx->rats_nonces, ASN1_OCTET_STRING_free);
-    ctx->rats_nonces = NULL;
+    ASN1_OCTET_STRING_free(ctx->rats_nonce);
+    ctx->rats_nonce = NULL;
+    ASN1_INTEGER_free(ctx->rats_nonce_expiry);
+    ctx->rats_nonce_expiry = NULL;
+    ASN1_OBJECT_free(ctx->rats_resp_type);
+    ctx->rats_resp_type = NULL;
+    ASN1_TYPE_free(ctx->rats_resp_info);
+    ctx->rats_resp_info = NULL;
+    ASN1_OBJECT_free(ctx->rats_req_type);
+    ctx->rats_req_type = NULL;
+    ASN1_TYPE_free(ctx->rats_req_info);
+    ctx->rats_req_info = NULL;
 
     return ossl_cmp_ctx_set0_statusString(ctx, NULL)
         && ossl_cmp_ctx_set0_newCert(ctx, NULL)
@@ -251,8 +261,12 @@ void OSSL_CMP_CTX_free(OSSL_CMP_CTX *ctx)
     OSSL_STACK_OF_X509_free(ctx->newChain);
     OSSL_STACK_OF_X509_free(ctx->caPubs);
     OSSL_STACK_OF_X509_free(ctx->extraCertsIn);
-    sk_ASN1_OCTET_STRING_pop_free(ctx->rats_nonces, ASN1_OCTET_STRING_free);
-    OPENSSL_free(ctx->nonce_hint);
+    ASN1_OCTET_STRING_free(ctx->rats_nonce);
+    ASN1_INTEGER_free(ctx->rats_nonce_expiry);
+    ASN1_OBJECT_free(ctx->rats_resp_type);
+    ASN1_TYPE_free(ctx->rats_resp_info);
+    ASN1_OBJECT_free(ctx->rats_req_type);
+    ASN1_TYPE_free(ctx->rats_req_info);
 
     OPENSSL_free(ctx);
 }
@@ -825,69 +839,149 @@ DEFINE_set1_ASN1_OCTET_STRING(OSSL_CMP_CTX, senderNonce)
 /* store the first req sender nonce for verifying delayed delivery */
 DEFINE_set1_ASN1_OCTET_STRING(ossl_cmp_ctx, first_senderNonce)
 
-/* Append a received nonce to the RATS nonce list stored in the context */
-int ossl_cmp_ctx_push1_rats_nonce(OSSL_CMP_CTX *ctx,
-                                   const ASN1_OCTET_STRING *nonce)
+/*
+ * Store the fields of a received NonceResponse in the context, replacing any
+ * previously stored RATS nonce-exchange state.  All fields are deep-copied;
+ * the caller retains ownership of *resp*.  Optional fields absent in *resp*
+ * reset the corresponding ctx field to NULL.
+ *
+ * A zero-length nonce is stored as-is: per the freshness draft it means the
+ * RA/CA does not require a freshness proof; the application decides how to
+ * proceed.
+ *
+ * Returns 1 on success, 0 on error (ctx state may be partially updated).
+ */
+int ossl_cmp_ctx_set1_rats_response(OSSL_CMP_CTX *ctx,
+                                    const OSSL_CMP_NONCERESPONSE *resp)
 {
-    ASN1_OCTET_STRING *copy;
-
-    if (ctx == NULL || nonce == NULL) {
+    if (ctx == NULL || resp == NULL || resp->nonce == NULL) {
         ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
         return 0;
     }
-    if (ctx->rats_nonces == NULL
-            && (ctx->rats_nonces = sk_ASN1_OCTET_STRING_new_null()) == NULL)
+
+    if (!ossl_cmp_asn1_octet_string_set1(&ctx->rats_nonce, resp->nonce))
         return 0;
-    if ((copy = ASN1_OCTET_STRING_dup(nonce)) == NULL)
+
+    ASN1_INTEGER_free(ctx->rats_nonce_expiry);
+    ctx->rats_nonce_expiry = NULL;
+    if (resp->expiry != NULL
+            && (ctx->rats_nonce_expiry = ASN1_INTEGER_dup(resp->expiry)) == NULL)
         return 0;
-    if (!sk_ASN1_OCTET_STRING_push(ctx->rats_nonces, copy)) {
-        ASN1_OCTET_STRING_free(copy);
+
+    ASN1_OBJECT_free(ctx->rats_resp_type);
+    ctx->rats_resp_type = NULL;
+    if (resp->type != NULL
+            && (ctx->rats_resp_type = OBJ_dup(resp->type)) == NULL)
         return 0;
-    }
+
+    ASN1_TYPE_free(ctx->rats_resp_info);
+    ctx->rats_resp_info = NULL;
+    if (resp->respInfo != NULL
+            && (ctx->rats_resp_info =
+                    ASN1_item_dup(ASN1_ITEM_rptr(ASN1_ANY),
+                                  resp->respInfo)) == NULL)
+        return 0;
     return 1;
 }
 
 /*
- * Return the first stored RATS nonce (backward-compatible single-nonce API).
- * Returns NULL if no nonces have been stored yet.
+ * Return the RATS nonce received in the last NonceResponse, or NULL if no
+ * nonce exchange has completed.  A zero-length nonce means the RA/CA does
+ * not require a freshness proof.  Owned by the CTX — do not free.
  */
-ASN1_OCTET_STRING *OSSL_CMP_CTX_get0_rats_nonce(const OSSL_CMP_CTX *ctx)
+const ASN1_OCTET_STRING *OSSL_CMP_CTX_get0_rats_nonce(const OSSL_CMP_CTX *ctx)
 {
     if (ctx == NULL) {
         ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
         return NULL;
     }
-    if (ctx->rats_nonces == NULL
-            || sk_ASN1_OCTET_STRING_num(ctx->rats_nonces) < 1)
-        return NULL;
-    return sk_ASN1_OCTET_STRING_value(ctx->rats_nonces, 0);
+    return ctx->rats_nonce;
 }
 
 /*
- * Return all stored RATS nonces as an ordered stack, one entry per
- * NonceResponse received.  The order matches the NonceRequest sequence sent
- * in the genm.  Returns NULL if no nonces have been stored yet.
+ * Return the NonceResponse.expiry value (validity in seconds), or NULL if
+ * the RA/CA did not include one.
  */
-STACK_OF(ASN1_OCTET_STRING) *OSSL_CMP_CTX_get0_rats_nonces(const OSSL_CMP_CTX *ctx)
+const ASN1_INTEGER *OSSL_CMP_CTX_get0_rats_nonce_expiry(const OSSL_CMP_CTX *ctx)
 {
     if (ctx == NULL) {
         ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
         return NULL;
     }
-    return ctx->rats_nonces;
+    return ctx->rats_nonce_expiry;
 }
 
-/* Set the verifier hint (FQDN/URI) for the NonceRequest in RATS */
-DEFINE_OSSL_CMP_CTX_set1(nonce_hint, char)
-
-/* Get the verifier hint for RATS nonce requests */
-const char *OSSL_CMP_CTX_get0_nonce_hint(const OSSL_CMP_CTX *ctx)
+/*
+ * Return the NonceResponse.type OID identifying the respInfo syntax, or NULL
+ * if the RA/CA did not include one.  Owned by the CTX — do not free.
+ */
+const ASN1_OBJECT *OSSL_CMP_CTX_get0_rats_resp_type(const OSSL_CMP_CTX *ctx)
 {
     if (ctx == NULL) {
         ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
         return NULL;
     }
-    return ctx->nonce_hint;
+    return ctx->rats_resp_type;
+}
+
+/*
+ * Return the NonceResponse.respInfo open value, or NULL if the RA/CA did not
+ * include one.  For the TPM platform profile this holds the DER of
+ * TpmAttestationParams.  Owned by the CTX — do not free.
+ */
+const ASN1_TYPE *OSSL_CMP_CTX_get0_rats_resp_info(const OSSL_CMP_CTX *ctx)
+{
+    if (ctx == NULL) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
+        return NULL;
+    }
+    return ctx->rats_resp_info;
+}
+
+/*
+ * Set the request-side nonce payload (type OID + reqInfo) for the next
+ * NonceRequest, kept as an opaque profile value.  *type_oid_dot* is the
+ * profile type OID in dotted form; *info_der* is the DER of the profile-
+ * specific value to carry in reqInfo (ASN1_ANY) and is copied internally.
+ * OpenSSL never interprets these — the profile (e.g. the TPM platform client)
+ * owns their meaning and is responsible for building *info_der*.
+ *
+ * type_oid_dot == NULL clears both fields (the NonceRequest carries no
+ * type/reqInfo).  info_der == NULL / info_der_len <= 0 keeps the type but
+ * omits reqInfo (per the draft, reqInfo MUST be omitted when type is absent).
+ * Returns 1 on success, 0 on error.
+ */
+int OSSL_CMP_CTX_set1_rats_reqInfo(OSSL_CMP_CTX *ctx, const char *type_oid_dot,
+                                   const unsigned char *info_der,
+                                   int info_der_len)
+{
+    ASN1_OBJECT *oid = NULL;
+    ASN1_TYPE *info = NULL;
+    const unsigned char *p = info_der;
+
+    if (ctx == NULL) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
+        return 0;
+    }
+
+    if (type_oid_dot != NULL) {
+        if ((oid = OBJ_txt2obj(type_oid_dot, 1)) == NULL) {
+            ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_ARGS);
+            return 0;
+        }
+        if (info_der != NULL && info_der_len > 0
+                && (info = d2i_ASN1_TYPE(NULL, &p, info_der_len)) == NULL) {
+            ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_ARGS);
+            ASN1_OBJECT_free(oid);
+            return 0;
+        }
+    }
+
+    ASN1_OBJECT_free(ctx->rats_req_type);
+    ctx->rats_req_type = oid;
+    ASN1_TYPE_free(ctx->rats_req_info);
+    ctx->rats_req_info = info;
+    return 1;
 }
 
 /* Set the proxy server to use for HTTP(S) connections */
@@ -1058,13 +1152,6 @@ int OSSL_CMP_CTX_set_option(OSSL_CMP_CTX *ctx, int opt, int val)
         }
         ctx->nonce_req_length = val;
         break;
-    case OSSL_CMP_OPT_NONCE_SEQ_SIZE:
-        if (val < 0) {
-            ERR_raise(ERR_LIB_CMP, CMP_R_VALUE_TOO_LARGE);
-            return 0;
-        }
-        ctx->nonce_seq_size = val;
-        break;
     default:
         ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_OPTION);
         return 0;
@@ -1131,8 +1218,6 @@ int OSSL_CMP_CTX_get_option(const OSSL_CMP_CTX *ctx, int opt)
         return ctx->rats_status;
     case OSSL_CMP_OPT_NONCE_REQ_LENGTH:
         return ctx->nonce_req_length;
-    case OSSL_CMP_OPT_NONCE_SEQ_SIZE:
-        return ctx->nonce_seq_size;
     default:
         ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_OPTION);
         return -1;
