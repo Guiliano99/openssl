@@ -155,18 +155,36 @@ ASN1_SEQUENCE(OSSL_CMP_ITAV) = {
 IMPLEMENT_ASN1_FUNCTIONS(OSSL_CMP_ITAV)
 IMPLEMENT_ASN1_DUP_FUNCTION(OSSL_CMP_ITAV)
 
+/*
+ * Nested freshness wrapper (libattest UpdateV8 shape):
+ *   NonceRequestTypeInfo  ::= SEQUENCE { type OID, reqInfo  ANY OPTIONAL }
+ *   NonceResponseTypeInfo ::= SEQUENCE { type OID, respInfo ANY OPTIONAL }
+ *   NonceRequest  ::= SEQUENCE { len OPTIONAL, reqTypeInfo  NonceRequestTypeInfo  OPTIONAL }
+ *   NonceResponse ::= SEQUENCE { nonce, expiry OPTIONAL, respTypeInfo NonceResponseTypeInfo OPTIONAL }
+ * The type OID + open value are grouped under reqTypeInfo/respTypeInfo.
+ */
+ASN1_SEQUENCE(OSSL_CMP_NONCEREQUESTTYPEINFO) = {
+    ASN1_SIMPLE(OSSL_CMP_NONCEREQUESTTYPEINFO, type,    ASN1_OBJECT),
+    ASN1_OPT(   OSSL_CMP_NONCEREQUESTTYPEINFO, reqInfo, ASN1_ANY)
+} ASN1_SEQUENCE_END(OSSL_CMP_NONCEREQUESTTYPEINFO)
+IMPLEMENT_ASN1_FUNCTIONS(OSSL_CMP_NONCEREQUESTTYPEINFO)
+
 ASN1_SEQUENCE(OSSL_CMP_NONCEREQUEST) = {
-    ASN1_OPT(OSSL_CMP_NONCEREQUEST, len,     ASN1_INTEGER),
-    ASN1_OPT(OSSL_CMP_NONCEREQUEST, type,    ASN1_OBJECT),
-    ASN1_OPT(OSSL_CMP_NONCEREQUEST, reqInfo, ASN1_ANY)
+    ASN1_OPT(OSSL_CMP_NONCEREQUEST, len,         ASN1_INTEGER),
+    ASN1_OPT(OSSL_CMP_NONCEREQUEST, reqTypeInfo, OSSL_CMP_NONCEREQUESTTYPEINFO)
 } ASN1_SEQUENCE_END(OSSL_CMP_NONCEREQUEST)
 IMPLEMENT_ASN1_FUNCTIONS(OSSL_CMP_NONCEREQUEST)
 
+ASN1_SEQUENCE(OSSL_CMP_NONCERESPONSETYPEINFO) = {
+    ASN1_SIMPLE(OSSL_CMP_NONCERESPONSETYPEINFO, type,     ASN1_OBJECT),
+    ASN1_OPT(   OSSL_CMP_NONCERESPONSETYPEINFO, respInfo, ASN1_ANY)
+} ASN1_SEQUENCE_END(OSSL_CMP_NONCERESPONSETYPEINFO)
+IMPLEMENT_ASN1_FUNCTIONS(OSSL_CMP_NONCERESPONSETYPEINFO)
+
 ASN1_SEQUENCE(OSSL_CMP_NONCERESPONSE) = {
-    ASN1_SIMPLE(OSSL_CMP_NONCERESPONSE, nonce,    ASN1_OCTET_STRING),
-    ASN1_OPT(OSSL_CMP_NONCERESPONSE,    expiry,   ASN1_INTEGER),
-    ASN1_OPT(OSSL_CMP_NONCERESPONSE,    type,     ASN1_OBJECT),
-    ASN1_OPT(OSSL_CMP_NONCERESPONSE,    respInfo, ASN1_ANY)
+    ASN1_SIMPLE(OSSL_CMP_NONCERESPONSE, nonce,        ASN1_OCTET_STRING),
+    ASN1_OPT(   OSSL_CMP_NONCERESPONSE, expiry,       ASN1_INTEGER),
+    ASN1_OPT(   OSSL_CMP_NONCERESPONSE, respTypeInfo, OSSL_CMP_NONCERESPONSETYPEINFO)
 } ASN1_SEQUENCE_END(OSSL_CMP_NONCERESPONSE)
 IMPLEMENT_ASN1_FUNCTIONS(OSSL_CMP_NONCERESPONSE)
 
@@ -525,8 +543,11 @@ OSSL_CMP_ITAV *OSSL_CMP_ITAV_new0_nonceRequest(int len, ASN1_OBJECT *type)
             goto err;
     }
     if (type != NULL) {
-        ASN1_OBJECT_free(req->type);
-        req->type = type;
+        if (req->reqTypeInfo == NULL
+                && (req->reqTypeInfo = OSSL_CMP_NONCEREQUESTTYPEINFO_new()) == NULL)
+            goto err;
+        ASN1_OBJECT_free(req->reqTypeInfo->type);
+        req->reqTypeInfo->type = type;
     }
 
     if ((itav = OSSL_CMP_ITAV_new()) == NULL)
@@ -538,25 +559,27 @@ OSSL_CMP_ITAV *OSSL_CMP_ITAV_new0_nonceRequest(int len, ASN1_OBJECT *type)
  err:
     /* Ownership of *type* transfers only on success: detach it before freeing
      * req so the caller's ASN1_OBJECT_free(type) on failure is never a double
-     * free (we may already have done req->type = type above). */
-    if (req != NULL && req->type == type)
-        req->type = NULL;
+     * free (we may already have done req->reqTypeInfo->type = type above). */
+    if (req != NULL && req->reqTypeInfo != NULL && req->reqTypeInfo->type == type)
+        req->reqTypeInfo->type = NULL;
     OSSL_CMP_NONCEREQUEST_free(req);
     OSSL_CMP_ITAV_free(itav);
     return NULL;
 }
 
 /*
- * Set NonceRequest.type and NonceRequest.reqInfo together.
+ * Set NonceRequest.reqTypeInfo.type and NonceRequest.reqTypeInfo.reqInfo
+ * together.
  *
- * Sets ``req->type = OBJ_txt2obj(*type_oid_dot*)`` and
- * ``req->reqInfo = d2i_ASN1_TYPE(*info_der*, *info_der_len*)``.
+ * Sets ``req->reqTypeInfo->type = OBJ_txt2obj(*type_oid_dot*)`` and
+ * ``req->reqTypeInfo->reqInfo = d2i_ASN1_TYPE(*info_der*, *info_der_len*)``,
+ * allocating *req->reqTypeInfo* if not already present.
  * The two fields are set together because the draft requires reqInfo to be
  * omitted whenever type is absent.
  *
  * TPM platform usage: pass the configured TPM_PCR_SELECTION_OID as
- * *type_oid_dot* and the DER of TpmAttestationParams{hashAlgId} as
- * *info_der* (the hash-bank proposal).
+ * *type_oid_dot* and the DER of TPM20QuoteReqInfo (candidate AK cert names +
+ * supportedHashAlgo list) as *info_der*.
  *
  * *info_der* is copied internally; the caller retains ownership.
  *
@@ -580,11 +603,17 @@ int OSSL_CMP_NONCEREQUEST_set1_info(OSSL_CMP_NONCEREQUEST *req,
         ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_ARGS);
         return 0;
     }
-    ASN1_OBJECT_free(req->type);
-    req->type = oid;
+    if (req->reqTypeInfo == NULL
+            && (req->reqTypeInfo = OSSL_CMP_NONCEREQUESTTYPEINFO_new()) == NULL) {
+        ASN1_OBJECT_free(oid);
+        ERR_raise(ERR_LIB_CMP, ERR_R_MALLOC_FAILURE);
+        return 0;
+    }
+    ASN1_OBJECT_free(req->reqTypeInfo->type);
+    req->reqTypeInfo->type = oid;
 
-    ASN1_TYPE_free(req->reqInfo);
-    if ((req->reqInfo = d2i_ASN1_TYPE(NULL, &p, info_der_len)) == NULL) {
+    ASN1_TYPE_free(req->reqTypeInfo->reqInfo);
+    if ((req->reqTypeInfo->reqInfo = d2i_ASN1_TYPE(NULL, &p, info_der_len)) == NULL) {
         ERR_raise(ERR_LIB_CMP, ERR_R_ASN1_LIB);
         return 0;
     }

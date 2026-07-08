@@ -270,51 +270,65 @@ struct ossl_cmp_crlstatus_st {
 DECLARE_ASN1_FUNCTIONS(OSSL_CMP_CRLSTATUS)
 
 /*-
- * NonceRequest ::= SEQUENCE {
- *     len      INTEGER (8..64)    OPTIONAL, -- required nonce length in bytes
- *     type     OBJECT IDENTIFIER  OPTIONAL, -- nonce-request syntax OID
- *     reqInfo  ANY                OPTIONAL  -- type-specific request info
- * }
- * Used as value of id-it-nonceRequest (genm direction), one NonceRequest per
- * ITAV as defined by draft-ietf-lamps-attestation-freshness (PR #26 shape).
- * Placeholder OID: NID_id_smime_aa_nonce until IANA assigns id-it TBD1.
+ * Nested freshness wrapper (libattest UpdateV8 shape):
  *
- * For the TPM platform profile, ``type`` is the configured
- * TPM_PCR_SELECTION_OID and ``reqInfo`` carries the DER of a
- * TpmAttestationParams{hashAlgId} hash-bank proposal.  Per the draft,
- * ``reqInfo`` MUST be omitted when ``type`` is absent.
+ *   NonceRequestTypeInfo ::= SEQUENCE {
+ *       type     OBJECT IDENTIFIER,        -- nonce-request syntax OID
+ *       reqInfo  ANY               OPTIONAL -- type-specific request info
+ *   }
+ *   NonceRequest ::= SEQUENCE {
+ *       len          INTEGER (8..64)       OPTIONAL, -- required nonce length
+ *       reqTypeInfo  NonceRequestTypeInfo  OPTIONAL  -- selected type + reqInfo
+ *   }
+ * Used as value of id-it-nonceRequest (genm direction), one NonceRequest per
+ * ITAV per draft-ietf-lamps-attestation-freshness.  Placeholder OID:
+ * NID_id_smime_aa_nonce until the id-it 1.3.6.1.5.5.7.4.98 value migration.
+ *
+ * For the TPM platform profile, ``reqTypeInfo.type`` is the configured
+ * TPM_PCR_SELECTION_OID and ``reqTypeInfo.reqInfo`` carries the DER of a
+ * TPM20QuoteReqInfo (candidate AK cert names + supportedHashAlgo list).
  */
+typedef struct ossl_cmp_noncerequesttypeinfo_st {
+    ASN1_OBJECT *type;
+    ASN1_TYPE   *reqInfo; /* OPTIONAL */
+} OSSL_CMP_NONCEREQUESTTYPEINFO;
+DECLARE_ASN1_FUNCTIONS(OSSL_CMP_NONCEREQUESTTYPEINFO)
+
 struct ossl_cmp_noncerequest_st {
-    ASN1_INTEGER *len;
-    ASN1_OBJECT  *type;
-    ASN1_TYPE    *reqInfo; /* OPTIONAL */
+    ASN1_INTEGER                  *len;
+    OSSL_CMP_NONCEREQUESTTYPEINFO *reqTypeInfo; /* OPTIONAL */
 }; /* OSSL_CMP_NONCEREQUEST */
 DECLARE_ASN1_FUNCTIONS(OSSL_CMP_NONCEREQUEST)
 
 /*-
- * NonceResponse ::= SEQUENCE {
- *     nonce    OCTET STRING (SIZE(0 | 8..64)),
- *     expiry   INTEGER            OPTIONAL, -- validity in seconds
- *     type     OBJECT IDENTIFIER  OPTIONAL, -- nonce-response syntax OID
- *     respInfo ANY                OPTIONAL  -- type-specific response info
- * }
- * Used as value of id-it-nonceResponse (genp direction), one NonceResponse
- * per ITAV.  A zero-length nonce means the RA/CA does not require a
- * freshness proof for the upcoming certificate request (unable/unwilling is
- * signalled as a CMP error instead).
- * Placeholder OID: NID_id_smime_aa_nonceResponse until IANA assigns id-it TBD2.
+ *   NonceResponseTypeInfo ::= SEQUENCE {
+ *       type      OBJECT IDENTIFIER,        -- nonce-response syntax OID
+ *       respInfo  ANY               OPTIONAL -- type-specific response info
+ *   }
+ *   NonceResponse ::= SEQUENCE {
+ *       nonce         OCTET STRING (SIZE(0 | 8..64)),
+ *       expiry        INTEGER               OPTIONAL, -- validity in seconds
+ *       respTypeInfo  NonceResponseTypeInfo  OPTIONAL -- selected type + respInfo
+ *   }
+ * Used as value of id-it-nonceResponse (genp direction).  A zero-length nonce
+ * means the RA/CA does not require a freshness proof (unable/unwilling is a CMP
+ * error instead).  Placeholder OID: NID_id_smime_aa_nonceResponse until the
+ * id-it 1.3.6.1.5.5.7.4.99 value migration.
  *
- * For the TPM platform profile, ``respInfo`` carries the DER of a
- * TpmAttestationParams — the RA/CA-selected PCR list plus the negotiated TPM
- * hash algorithm ID (e.g. 0x000B for SHA-256) the attester must quote.
- * Per the draft, ``respInfo`` MUST be omitted when ``type`` is absent and the
- * response ``type`` is defined by the request ``type``.
+ * For the TPM platform profile, ``respTypeInfo.respInfo`` carries the DER of a
+ * TPM20QuoteRespInfo — the RA/CA-selected AK cert name, the mandated
+ * pcrSelection, and the single negotiated hashAlgo (e.g. 11 for SHA-256).
  */
+typedef struct ossl_cmp_nonceresponsetypeinfo_st {
+    ASN1_OBJECT *type;
+    ASN1_TYPE   *respInfo; /* OPTIONAL */
+} OSSL_CMP_NONCERESPONSETYPEINFO;
+DECLARE_ASN1_FUNCTIONS(OSSL_CMP_NONCERESPONSETYPEINFO)
+
 struct ossl_cmp_nonceresponse_st {
-    ASN1_OCTET_STRING *nonce;
-    ASN1_INTEGER      *expiry;
-    ASN1_OBJECT       *type;
-    ASN1_TYPE         *respInfo; /* OPTIONAL */
+    ASN1_OCTET_STRING              *nonce;
+    ASN1_INTEGER                   *expiry;
+    OSSL_CMP_NONCERESPONSETYPEINFO *respTypeInfo; /* OPTIONAL */
 }; /* OSSL_CMP_NONCERESPONSE */
 DECLARE_ASN1_FUNCTIONS(OSSL_CMP_NONCERESPONSE)
 

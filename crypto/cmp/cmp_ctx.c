@@ -870,16 +870,16 @@ int ossl_cmp_ctx_set1_rats_response(OSSL_CMP_CTX *ctx,
 
     ASN1_OBJECT_free(ctx->rats_resp_type);
     ctx->rats_resp_type = NULL;
-    if (resp->type != NULL
-            && (ctx->rats_resp_type = OBJ_dup(resp->type)) == NULL)
+    if (resp->respTypeInfo != NULL && resp->respTypeInfo->type != NULL
+            && (ctx->rats_resp_type = OBJ_dup(resp->respTypeInfo->type)) == NULL)
         return 0;
 
     ASN1_TYPE_free(ctx->rats_resp_info);
     ctx->rats_resp_info = NULL;
-    if (resp->respInfo != NULL
+    if (resp->respTypeInfo != NULL && resp->respTypeInfo->respInfo != NULL
             && (ctx->rats_resp_info =
                     ASN1_item_dup(ASN1_ITEM_rptr(ASN1_ANY),
-                                  resp->respInfo)) == NULL)
+                                  resp->respTypeInfo->respInfo)) == NULL)
         return 0;
     return 1;
 }
@@ -927,7 +927,7 @@ const ASN1_OBJECT *OSSL_CMP_CTX_get0_rats_resp_type(const OSSL_CMP_CTX *ctx)
 /*
  * Return the NonceResponse.respInfo open value, or NULL if the RA/CA did not
  * include one.  For the TPM platform profile this holds the DER of
- * TpmAttestationParams.  Owned by the CTX — do not free.
+ * TPM20QuoteRespInfo.  Owned by the CTX — do not free.
  */
 const ASN1_TYPE *OSSL_CMP_CTX_get0_rats_resp_info(const OSSL_CMP_CTX *ctx)
 {

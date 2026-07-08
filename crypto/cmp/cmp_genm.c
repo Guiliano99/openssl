@@ -477,17 +477,30 @@ static int set_remote_attestation_Nonce(OSSL_CMP_CTX *ctx,
         goto err;
     }
 
-    /* per the draft, respInfo MUST be omitted when type is absent */
-    if (resp->type == NULL && resp->respInfo != NULL) {
-        ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_ARGS);
-        goto err;
-    }
+    {
+        /* type/respInfo now live together inside the optional respTypeInfo */
+        ASN1_OBJECT *resp_type =
+            resp->respTypeInfo != NULL ? resp->respTypeInfo->type : NULL;
+        ASN1_TYPE *resp_info =
+            resp->respTypeInfo != NULL ? resp->respTypeInfo->respInfo : NULL;
 
-    /* the type in the nonce response is defined by the type in the request */
-    if (resp->type != NULL && expected_type != NULL
-            && OBJ_cmp(resp->type, expected_type) != 0) {
-        ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_ARGS);
-        goto err;
+        /*
+         * per the draft, respInfo MUST be omitted when type is absent; this is
+         * now enforced by construction (type is a mandatory field of
+         * respTypeInfo, so it cannot be NULL while respInfo, its sibling
+         * field, is set) -- kept as a defensive check rather than removed.
+         */
+        if (resp_type == NULL && resp_info != NULL) {
+            ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_ARGS);
+            goto err;
+        }
+
+        /* the type in the nonce response is defined by the type in the request */
+        if (resp_type != NULL && expected_type != NULL
+                && OBJ_cmp(resp_type, expected_type) != 0) {
+            ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_ARGS);
+            goto err;
+        }
     }
 
     if (!ossl_cmp_ctx_set1_rats_response(ctx, resp))
@@ -538,15 +551,26 @@ int ossl_cmp_get_nonce(OSSL_CMP_CTX *ctx)
     /*
      * Attach the application-supplied opaque reqInfo, if any.  Its contents
      * are a contract between ctx->rats_req_type and the profile code that
-     * built it (e.g. DER(TpmAttestationParams) for the TPM platform profile);
+     * built it (e.g. DER(TPM20QuoteReqInfo) for the TPM platform profile);
      * OpenSSL just carries the bytes.
      */
     if (ctx->rats_req_info != NULL) {
         OSSL_CMP_NONCEREQUEST *entry = req->infoValue.nonceRequestValue;
 
-        if (entry == NULL
-                || (entry->reqInfo = ASN1_item_dup(ASN1_ITEM_rptr(ASN1_ANY),
-                                                   ctx->rats_req_info)) == NULL) {
+        /*
+         * reqTypeInfo is always already allocated by new0_nonceRequest()
+         * above: rats_req_info is only ever set (via
+         * OSSL_CMP_CTX_set1_rats_reqInfo) inside its own type_oid_dot != NULL
+         * branch, so rats_req_info != NULL implies rats_req_type != NULL,
+         * which new0_nonceRequest already turned into a reqTypeInfo with
+         * ->type set. (A defensive allocation here would be wrong anyway:
+         * type is ASN1_SIMPLE/mandatory, so a reqTypeInfo built without it
+         * would fail to i2d.)
+         */
+        if (entry == NULL || entry->reqTypeInfo == NULL
+                || (entry->reqTypeInfo->reqInfo =
+                        ASN1_item_dup(ASN1_ITEM_rptr(ASN1_ANY),
+                                     ctx->rats_req_info)) == NULL) {
             ERR_raise(ERR_LIB_CMP, ERR_R_ASN1_LIB);
             OSSL_CMP_ITAV_free(req);
             return 0;
