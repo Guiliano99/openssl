@@ -414,7 +414,7 @@ const ASN1_TYPE *OSSL_CMP_CTX_get0_rats_resp_info(const OSSL_CMP_CTX *ctx);
  * is the profile type OID (dotted form) and *info_der* is the DER carried in
  * reqInfo (ASN1_ANY), copied internally.  OpenSSL never interprets these — the
  * profile (e.g. the TPM platform client) builds *info_der* (e.g. the DER of
- * TpmAttestationParams).  type_oid_dot == NULL clears both fields; info_der ==
+ * TPM20QuoteReqInfo).  type_oid_dot == NULL clears both fields; info_der ==
  * NULL keeps the type but omits reqInfo.  Returns 1 on success, 0 on error.
  */
 int OSSL_CMP_CTX_set1_rats_reqInfo(OSSL_CMP_CTX *ctx, const char *type_oid_dot,

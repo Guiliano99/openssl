@@ -126,7 +126,7 @@ struct ossl_cmp_ctx_st {
     int nonce_req_length; /* requested nonce length in bytes (0 = server chooses) */
     /*
      * Single RATS nonce exchange state per draft-ietf-lamps-attestation-
-     * freshness (PR #26 shape): the genm carries one NonceRequest, the genp
+     * freshness-08 §3.1 shape: the genm carries one NonceRequest, the genp
      * one NonceResponse.  A zero-length rats_nonce means the RA/CA requires
      * no freshness proof for the upcoming certificate request.
      */
