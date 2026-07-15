@@ -2062,3 +2062,7 @@ tcg-tr-category 37 : tcg-tr-cat-PublicKey 								: Public Key Trait Category
 nistKems 1 : id-alg-ml-kem-512  : ML-KEM-512
 nistKems 2 : id-alg-ml-kem-768  : ML-KEM-768
 nistKems 3 : id-alg-ml-kem-1024 : ML-KEM-1024
+
+# Remote-attestation demo: X.509 certificate extension carrying the
+# Verifier's EAR (Entity Attestation Result) as a UTF8String-wrapped JWT.
+1 7 6 5 123 : earAttestationResult : EAR Attestation Result

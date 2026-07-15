@@ -10,7 +10,7 @@
  */
 
 /* Serialized OID's */
-static const unsigned char so[9552] = {
+static const unsigned char so[9556] = {
     0x2A,0x86,0x48,0x86,0xF7,0x0D,                 /* [    0] OBJ_rsadsi */
     0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,            /* [    6] OBJ_pkcs */
     0x2A,0x86,0x48,0x86,0xF7,0x0D,0x02,0x02,       /* [   13] OBJ_md2 */
@@ -1351,9 +1351,10 @@ static const unsigned char so[9552] = {
     0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,0x09,0x10,0x02,0xC5,0x38,  /* [ 9516] OBJ_id_smime_aa_nonce */
     0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,0x09,0x10,0x02,0xC5,0x39,  /* [ 9528] OBJ_id_smime_aa_nonceResponse */
     0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,0x09,0x10,0x02,0x3B,  /* [ 9540] OBJ_id_smime_aa_attestation */
+    0x2F,0x06,0x05,0x7B,                           /* [ 9551] OBJ_earAttestationResult */
 };
 
-#define NUM_NID 1604
+#define NUM_NID 1605
 static const ASN1_OBJECT nid_objs[NUM_NID] = {
     {"UNDEF", "undefined", NID_undef},
     {"rsadsi", "RSA Data Security, Inc.", NID_rsadsi, 6, &so[0]},
@@ -2959,9 +2960,10 @@ static const ASN1_OBJECT nid_objs[NUM_NID] = {
     { NULL, NULL, NID_undef },
     {"id-smime-aa-nonceResponse", "id-smime-aa-nonceResponse", NID_id_smime_aa_nonceResponse, 12, &so[9528]},
     {"id-smime-aa-attestation", "id-smime-aa-attestation", NID_id_smime_aa_attestation, 11, &so[9540]},
+    {"earAttestationResult", "EAR Attestation Result", NID_earAttestationResult, 4, &so[9551]},
 };
 
-#define NUM_SN 1490
+#define NUM_SN 1491
 static const unsigned int sn_objs[NUM_SN] = {
      364,    /* "AD_DVCS" */
      419,    /* "AES-128-CBC" */
@@ -3446,6 +3448,7 @@ static const unsigned int sn_objs[NUM_SN] = {
     1157,    /* "dstu34311" */
     1159,    /* "dstu4145be" */
     1158,    /* "dstu4145le" */
+    1604,    /* "earAttestationResult" */
      791,    /* "ecdsa-with-Recommended" */
      416,    /* "ecdsa-with-SHA1" */
      793,    /* "ecdsa-with-SHA224" */
@@ -4455,7 +4458,7 @@ static const unsigned int sn_objs[NUM_SN] = {
     1289,    /* "zstd" */
 };
 
-#define NUM_LN 1490
+#define NUM_LN 1491
 static const unsigned int ln_objs[NUM_LN] = {
      363,    /* "AD Time Stamping" */
      405,    /* "ANSI X9.62" */
@@ -4536,6 +4539,7 @@ static const unsigned int ln_objs[NUM_LN] = {
     1389,    /* "Distributed Management Task Force Registry" */
      392,    /* "Domain" */
      132,    /* "E-mail Protection" */
+    1604,    /* "EAR Attestation Result" */
     1087,    /* "ED25519" */
     1088,    /* "ED448" */
     1431,    /* "EK Certificate Trait Category" */
@@ -5949,7 +5953,7 @@ static const unsigned int ln_objs[NUM_LN] = {
      125,    /* "zlib compression" */
 };
 
-#define NUM_OBJ 1347
+#define NUM_OBJ 1348
 static const unsigned int obj_objs[NUM_OBJ] = {
        0,    /* OBJ_undef                        0 */
      181,    /* OBJ_iso                          1 */
@@ -6109,6 +6113,7 @@ static const unsigned int obj_objs[NUM_OBJ] = {
      387,    /* OBJ_SNMPv2                       1 3 6 1 6 */
      388,    /* OBJ_Mail                         1 3 6 1 7 */
      376,    /* OBJ_algorithm                    1 3 14 3 2 */
+    1604,    /* OBJ_earAttestationResult         1 7 6 5 123 */
      395,    /* OBJ_clearance                    2 5 1 5 55 */
       19,    /* OBJ_rsa                          2 5 8 1 1 */
       96,    /* OBJ_mdc2WithRSA                  2 5 8 3 100 */

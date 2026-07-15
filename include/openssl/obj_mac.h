@@ -6635,6 +6635,11 @@
 #define NID_ML_KEM_1024         1456
 #define OBJ_ML_KEM_1024         OBJ_nistKems,3L
 
+#define SN_earAttestationResult         "earAttestationResult"
+#define LN_earAttestationResult         "EAR Attestation Result"
+#define NID_earAttestationResult                1604
+#define OBJ_earAttestationResult                1L,7L,6L,5L,123L
+
 #endif /* OPENSSL_OBJ_MAC_H */
 
 #ifndef OPENSSL_NO_DEPRECATED_3_0

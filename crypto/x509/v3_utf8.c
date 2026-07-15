@@ -19,11 +19,15 @@
  * This extension is required to obtain the status of a qualified certificate at Russian Federation.
  * RFC-style description is available here: https://tools.ietf.org/html/draft-deremin-rfc4491-bis-04#section-5
  * Russian Federal Law 63 "Digital Sign" is available here:  http://www.consultant.ru/document/cons_doc_LAW_112701/
+ *
+ * EAR Attestation Result (1.7.6.5.123) The Verifier's Entity Attestation
+ * Result for the remote-attestation demo, carried as a JWT in a UTF8String.
  */
 
 
-const X509V3_EXT_METHOD ossl_v3_utf8_list[1] = {
+const X509V3_EXT_METHOD ossl_v3_utf8_list[2] = {
     EXT_UTF8STRING(NID_subjectSignTool),
+    EXT_UTF8STRING(NID_earAttestationResult),
 };
 
 char *i2s_ASN1_UTF8STRING(X509V3_EXT_METHOD *method,
