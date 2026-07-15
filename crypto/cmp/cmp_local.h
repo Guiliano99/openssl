@@ -144,6 +144,17 @@ struct ossl_cmp_ctx_st {
      */
     ASN1_OBJECT *rats_req_type;
     ASN1_TYPE   *rats_req_info;
+    /*
+     * Expected NonceResponse.type, when it legitimately differs from
+     * rats_req_type (request and response are distinct wire positions; a
+     * profile MAY answer under its own OID rather than echoing the request's
+     * — e.g. the TPM platform quote profile). Set via
+     * OSSL_CMP_CTX_set1_rats_expected_resp_type(). NULL (the common case,
+     * profiles that answer under the same OID they were asked under) falls
+     * back to rats_req_type for validation, so this is opt-in and every
+     * existing same-OID profile is unaffected.
+     */
+    ASN1_OBJECT *rats_expected_resp_type;
 
     /* misc body contents */
     int revocationReason; /* revocation reason code to be included in RR */

@@ -5935,6 +5935,7 @@ OSSL_CMP_CTX_get0_rats_nonce_expiry     ?	3_6_0	EXIST::FUNCTION:CMP
 OSSL_CMP_CTX_get0_rats_resp_type        ?	3_6_0	EXIST::FUNCTION:CMP
 OSSL_CMP_CTX_get0_rats_resp_info        ?	3_6_0	EXIST::FUNCTION:CMP
 OSSL_CMP_CTX_set1_rats_reqInfo          ?	3_6_0	EXIST::FUNCTION:CMP
+OSSL_CMP_CTX_set1_rats_expected_resp_type ?	3_6_0	EXIST::FUNCTION:CMP
 OSSL_CMP_CTX_get0_reqExtensions         ?	3_6_0	EXIST::FUNCTION:CMP
 OSSL_CMP_certreq_cb                     ?	3_6_0	EXIST::FUNCTION:CMP
 OSSL_CMP_CTX_set_certreq_cb             ?	3_6_0	EXIST::FUNCTION:CMP

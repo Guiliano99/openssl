@@ -189,6 +189,8 @@ int OSSL_CMP_CTX_reinit(OSSL_CMP_CTX *ctx)
     ctx->rats_req_type = NULL;
     ASN1_TYPE_free(ctx->rats_req_info);
     ctx->rats_req_info = NULL;
+    ASN1_OBJECT_free(ctx->rats_expected_resp_type);
+    ctx->rats_expected_resp_type = NULL;
 
     return ossl_cmp_ctx_set0_statusString(ctx, NULL)
         && ossl_cmp_ctx_set0_newCert(ctx, NULL)
@@ -267,6 +269,7 @@ void OSSL_CMP_CTX_free(OSSL_CMP_CTX *ctx)
     ASN1_TYPE_free(ctx->rats_resp_info);
     ASN1_OBJECT_free(ctx->rats_req_type);
     ASN1_TYPE_free(ctx->rats_req_info);
+    ASN1_OBJECT_free(ctx->rats_expected_resp_type);
 
     OPENSSL_free(ctx);
 }
@@ -981,6 +984,40 @@ int OSSL_CMP_CTX_set1_rats_reqInfo(OSSL_CMP_CTX *ctx, const char *type_oid_dot,
     ctx->rats_req_type = oid;
     ASN1_TYPE_free(ctx->rats_req_info);
     ctx->rats_req_info = info;
+    return 1;
+}
+
+/*
+ * Set the NonceResponse.type OID a profile expects on the genp leg, for
+ * profiles where the response legitimately answers under a different OID
+ * than the NonceRequest.reqTypeInfo.type it was asked under (request and
+ * response are distinct wire positions — e.g. the TPM platform quote
+ * profile). ossl_cmp_get_nonce() validates the received response type
+ * against this value when set, falling back to rats_req_type when it is not
+ * (the common case: a profile that answers under the same OID it was asked
+ * under needs no call to this function).
+ *
+ * type_oid_dot == NULL clears the override, restoring the rats_req_type
+ * fallback. Returns 1 on success, 0 on error.
+ */
+int OSSL_CMP_CTX_set1_rats_expected_resp_type(OSSL_CMP_CTX *ctx,
+                                              const char *type_oid_dot)
+{
+    ASN1_OBJECT *oid = NULL;
+
+    if (ctx == NULL) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
+        return 0;
+    }
+
+    if (type_oid_dot != NULL
+            && (oid = OBJ_txt2obj(type_oid_dot, 1)) == NULL) {
+        ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_ARGS);
+        return 0;
+    }
+
+    ASN1_OBJECT_free(ctx->rats_expected_resp_type);
+    ctx->rats_expected_resp_type = oid;
     return 1;
 }
 

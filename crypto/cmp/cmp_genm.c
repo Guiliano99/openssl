@@ -448,8 +448,13 @@ int OSSL_CMP_get1_certReqTemplate(OSSL_CMP_CTX *ctx,
  * Draft rules enforced here:
  * - the ITAV value is exactly one NonceResponse;
  * - respInfo present requires type present;
- * - the response type, when present, must equal the request type
- *   (*expected_type*; may be NULL when the request carried no type);
+ * - the response type, when present, must equal *expected_type* (may be NULL
+ *   when the request carried no type, or when the caller has no expectation
+ *   to enforce). Ordinarily this is the request type, but a profile whose
+ *   response legitimately answers under a different OID than its request
+ *   (distinct wire positions — e.g. the TPM platform quote profile) passes
+ *   its own expectation via OSSL_CMP_CTX_set1_rats_expected_resp_type(); see
+ *   ossl_cmp_get_nonce() below for how *expected_type* is resolved;
  * - a zero-length nonce is stored as-is: it means the RA/CA does not
  *   require a freshness proof — the application decides how to proceed.
  */
@@ -483,6 +488,10 @@ static int set_remote_attestation_Nonce(OSSL_CMP_CTX *ctx,
             resp->respTypeInfo != NULL ? resp->respTypeInfo->type : NULL;
         ASN1_TYPE *resp_info =
             resp->respTypeInfo != NULL ? resp->respTypeInfo->respInfo : NULL;
+        char resp_type_name[80] = "<none>";
+
+        if (resp_type != NULL)
+            OBJ_obj2txt(resp_type_name, sizeof(resp_type_name), resp_type, 1);
 
         /*
          * per the draft, respInfo MUST be omitted when type is absent; this is
@@ -495,12 +504,27 @@ static int set_remote_attestation_Nonce(OSSL_CMP_CTX *ctx,
             goto err;
         }
 
-        /* the type in the nonce response is defined by the type in the request */
+        /* the response type, when present, must match *expected_type* */
         if (resp_type != NULL && expected_type != NULL
                 && OBJ_cmp(resp_type, expected_type) != 0) {
+            char expected_type_name[80] = "<unknown>";
+
+            OBJ_obj2txt(expected_type_name, sizeof(expected_type_name),
+                        expected_type, 1);
+            ossl_cmp_log2(WARN, ctx,
+                          "NonceResponse.type '%s' does not match expected '%s'",
+                          resp_type_name, expected_type_name);
             ERR_raise(ERR_LIB_CMP, CMP_R_INVALID_ARGS);
             goto err;
         }
+
+        ossl_cmp_log4(DEBUG, ctx,
+                      "received NonceResponse: nonce=%d byte(s), expiry=%s, "
+                      "type=%s, respInfo=%s",
+                      resp->nonce->length,
+                      resp->expiry != NULL ? "present" : "none",
+                      resp_type_name,
+                      resp_info != NULL ? "present" : "none");
     }
 
     if (!ossl_cmp_ctx_set1_rats_response(ctx, resp))
@@ -585,8 +609,17 @@ int ossl_cmp_get_nonce(OSSL_CMP_CTX *ctx)
                               "nonceResponse")) == NULL)
         return 0;
 
-    /* the response type, when present, must equal the request type */
-    if (!set_remote_attestation_Nonce(ctx, itav, ctx->rats_req_type))
+    /*
+     * The response type, when present, must equal the expected type: the
+     * application's explicit rats_expected_resp_type override when set (a
+     * profile whose response answers under a different OID than its
+     * request — e.g. the TPM platform quote profile), otherwise the request
+     * type itself (the common case: response echoes the request's OID).
+     */
+    if (!set_remote_attestation_Nonce(ctx, itav,
+                                      ctx->rats_expected_resp_type != NULL
+                                          ? ctx->rats_expected_resp_type
+                                          : ctx->rats_req_type))
         return 0;
 
     return 1;
