@@ -420,6 +420,18 @@ const ASN1_TYPE *OSSL_CMP_CTX_get0_rats_resp_info(const OSSL_CMP_CTX *ctx);
 int OSSL_CMP_CTX_set1_rats_reqInfo(OSSL_CMP_CTX *ctx, const char *type_oid_dot,
                                    const unsigned char *info_der,
                                    int info_der_len);
+/*
+ * Set the NonceResponse.type OID expected on the genp leg, for profiles whose
+ * response legitimately answers under a different OID than the request (the
+ * TPM platform quote profile: request and response are distinct wire
+ * positions). Only needed when the response OID differs from the request
+ * OID set via OSSL_CMP_CTX_set1_rats_reqInfo(); leave unset (or pass NULL to
+ * clear) for a profile that answers under the same OID it was asked under —
+ * validation then falls back to the request type. Returns 1 on success, 0 on
+ * error.
+ */
+int OSSL_CMP_CTX_set1_rats_expected_resp_type(OSSL_CMP_CTX *ctx,
+                                              const char *type_oid_dot);
 /* message transfer: */
 int OSSL_CMP_CTX_set1_serverPath(OSSL_CMP_CTX *ctx, const char *path);
 int OSSL_CMP_CTX_set1_server(OSSL_CMP_CTX *ctx, const char *address);
